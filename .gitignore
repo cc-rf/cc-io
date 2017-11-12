@@ -1,0 +1,60 @@
+# local:
+build/
+out/
+pub/
+tmp/
+*.log
+out/
+*.pyc
+
+# https://github.com/github/gitignore/blob/master/Global/Windows.gitignore
+Thumbs.db
+Desktop.ini
+
+# https://github.com/github/gitignore/blob/master/Global/OSX.gitignore
+.DS_Store
+._*
+.Spotlight-V100
+.Trashes
+
+# https://github.com/github/gitignore/blob/master/Global/Linux.gitignore
+.*
+!.gitignore
+*~
+.directory
+
+# https://github.com/github/gitignore/blob/master/Global/Eclipse.gitignore
+*.pydevproject
+!.project
+.metadata
+bin/**
+tmp/**
+tmp/**/*
+*.tmp
+*.bak
+*.swp
+*~.nib
+local.properties
+!.classpath
+.settings/
+.loadpath
+.externalToolBuilders/
+*.launch
+.cproject
+.buildpath
+
+# https://github.com/github/gitignore/blob/master/Global/IntelliJ.gitignore
+#*.iml
+*.ipr
+*.iws
+.idea/
+.idea/workspace.xml
+
+# https://github.com/github/gitignore/blob/master/Android.gitignore
+*.apk
+*.ap_
+*.dex
+*.class
+bin/
+gen/
+local.properties
