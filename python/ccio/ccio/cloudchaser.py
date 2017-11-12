@@ -93,6 +93,9 @@ class CloudChaser(Serf):
             handle=self.handle_uart
         )
 
+    def __str__(self):
+        return "cc@{}".format(self.port)
+
     def reset(self, reopen=True):
         self.io.reset()
 

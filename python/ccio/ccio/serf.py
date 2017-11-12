@@ -30,6 +30,7 @@ class Serf(object):
         self._sync = {}
         self._thread_input = None
         self.write = write
+        self.port = None
 
     def add(self, name, code, encode=None, decode=None, handle=None, response=None):
         if encode is None:
@@ -98,7 +99,7 @@ class Serf(object):
             # self.serial = serial.Serial(timeout=0.01)
             self.serial = serial.Serial()
 
-        self.serial.port = tty
+        self.port = self.serial.port = tty
         self.serial.baudrate = baud
         self.serial.open()
         self._thread_input = threading.Thread(target=self._input_thread)

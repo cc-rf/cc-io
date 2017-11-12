@@ -16,9 +16,9 @@ def command_recv(args, cc):
 
 def command_send(args, cc):
     while 1:
-        data = 'h' * 6000  # '''.join(chr(n % 256) for n in range(4800))
+        data = 'h'  # '''.join(chr(n % 256) for n in range(4800))
         # data = ''.join([chr(random.randrange(0, 0xff+1)) for _ in range(random.randrange(24, 114))])
-        cc.io.send_wait(CloudChaser.NMAC_SEND_MESG, 0x4BDE, data)
+        cc.io.send_wait(CloudChaser.NMAC_SEND_DGRM, 0x0000, data)
         # time.sleep(0.010)
         sys.exit()
 
