@@ -7,7 +7,7 @@ import sys
 import os
 import argparse
 import traceback
-
+import random
 
 def command_recv(args, cc):
     while not cc.join(1):
@@ -16,11 +16,11 @@ def command_recv(args, cc):
 
 def command_send(args, cc):
     while 1:
-        data = 'h'  # '''.join(chr(n % 256) for n in range(4800))
-        # data = ''.join([chr(random.randrange(0, 0xff+1)) for _ in range(random.randrange(24, 114))])
-        cc.io.send_wait(CloudChaser.NMAC_SEND_DGRM, 0x0000, data)
+        data = 'a' * 115  # ''.join(chr(n % 256) for n in range(4))
+        # data = ''.join([chr(random.randrange(0, 0xff+1)) for _ in range(random.randrange(4, 200))])
+        cc.io.send(CloudChaser.NMAC_SEND_STRM, 0x0000, data)
         # time.sleep(0.010)
-        sys.exit()
+        # sys.exit()
 
 
 def main(args):
@@ -48,6 +48,10 @@ def main(args):
 
     if args.command == 'send':
         command_send(args, cc)
+        sys.exit(0)
+
+    if args.command == 'rainbow':
+        cc.io.rainbow()
         sys.exit(0)
 
 

@@ -21,6 +21,7 @@ class CloudChaser(Serf):
     CODE_ID_RECV = 3
     CODE_ID_RESET = 9
     CODE_ID_UART = 26
+    CODE_ID_RAINBOW = 29
 
     RESET_MAGIC = 0xD1E00D1E
 
@@ -91,6 +92,11 @@ class CloudChaser(Serf):
             encode=lambda data, code=0x00: struct.pack("<B", code & 0xFF) + data,
             decode=lambda data: struct.unpack("<B%is" % (len(data) - 1), data),
             handle=self.handle_uart
+        )
+
+        self.add(
+            name='rainbow',
+            code=CloudChaser.CODE_ID_RAINBOW
         )
 
     def __str__(self):
