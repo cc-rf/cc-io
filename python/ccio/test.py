@@ -5,9 +5,11 @@ from __future__ import print_function
 from ccio import CloudChaser, Stats, cleanup
 import sys
 import os
+import time
 import argparse
 import traceback
 import random
+
 
 def command_recv(args, cc):
     while not cc.join(1):
@@ -16,10 +18,10 @@ def command_recv(args, cc):
 
 def command_send(args, cc):
     while 1:
-        data = 'a' * 115  # ''.join(chr(n % 256) for n in range(4))
-        # data = ''.join([chr(random.randrange(0, 0xff+1)) for _ in range(random.randrange(4, 200))])
-        cc.io.send(CloudChaser.NMAC_SEND_STRM, 0x0000, data)
-        # time.sleep(0.010)
+        data = 'a' * 1  # ''.join(chr(n % 256) for n in range(4))
+        # data = ''.join([chr(random.randrange(0, 0xff+1)) for _ in range(random.randrange(4, 115))])
+        cc.io.send(CloudChaser.NMAC_SEND_MESG, 0x4BF2, data)
+        # time.sleep(0.060)
         # sys.exit()
 
 
@@ -52,6 +54,12 @@ def main(args):
 
     if args.command == 'rainbow':
         cc.io.rainbow()
+
+    if args.command == 'artnet':
+        import artnet
+        server = artnet.ArtnetServer(cc)
+        server.start()
+        server.join()
         sys.exit(0)
 
 

@@ -21,6 +21,7 @@ class CloudChaser(Serf):
     CODE_ID_RECV = 3
     CODE_ID_RESET = 9
     CODE_ID_UART = 26
+    CODE_ID_LED = 27
     CODE_ID_RAINBOW = 29
 
     RESET_MAGIC = 0xD1E00D1E
@@ -97,6 +98,15 @@ class CloudChaser(Serf):
         self.add(
             name='rainbow',
             code=CloudChaser.CODE_ID_RAINBOW
+        )
+
+        self.add(
+            name='led',
+            code=CloudChaser.CODE_ID_LED,
+            encode=lambda rgb: struct.pack(
+                "<%is" % len(rgb * 3),
+                ''.join(chr(c) for grb in [(g, r, b) for r, g, b in rgb] for c in grb)  # Rearrange and unroll
+            )
         )
 
     def __str__(self):
