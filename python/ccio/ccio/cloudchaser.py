@@ -103,8 +103,8 @@ class CloudChaser(Serf):
         self.add(
             name='led',
             code=CloudChaser.CODE_ID_LED,
-            encode=lambda rgb: struct.pack(
-                "<%is" % len(rgb * 3),
+            encode=lambda mask, rgb: struct.pack(
+                "<B%is" % len(rgb * 3), mask & 0xFF,
                 ''.join(chr(c) for grb in [(g, r, b) for r, g, b in rgb] for c in grb)  # Rearrange and unroll
             )
         )

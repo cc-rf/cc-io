@@ -2,6 +2,9 @@
 """Simple tests for Cloud Chaser debugging and validation.
 """
 from __future__ import print_function
+
+import pickle
+
 from ccio import CloudChaser, Stats, cleanup
 import sys
 import os
@@ -61,6 +64,15 @@ def main(args):
         server.start()
         server.join()
         sys.exit(0)
+
+    if args.command == 'replay':
+        infile = args.param[0]
+        indata = pickle.load(file(infile, 'rb'))
+
+        while 1:
+            for colors in indata:
+                cc.io.led(0x01, colors)
+                time.sleep(0.04)
 
 
 def print_packet(cc, node, peer, dest, rssi, lqi, data):

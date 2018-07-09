@@ -2,11 +2,15 @@
 """Basic ArtNet server.
 """
 from __future__ import print_function
+
+import math
+import pickle
+import struct
 import sys
 import socket
 import threading
 
-ADDR_DEFAULT = "0.0.0.0"
+ADDR_DEFAULT = "127.0.0.1"
 PORT_DEFAULT = 6454
 RECV_BUFFER_SIZE = 16384
 
@@ -15,6 +19,8 @@ class ArtnetServer(object):
     addr = ("0.0.0.0", 0)
     sock = None
     cc = None
+    sequence = []
+    smin = 100000
 
     def __init__(self, cc, addr=ADDR_DEFAULT, port=PORT_DEFAULT):
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
@@ -25,6 +31,7 @@ class ArtnetServer(object):
         self.addr = self.sock.getsockname()
         self.thr_rx = threading.Thread(target=self._recv_task)
         self.cc = cc
+        self.sequence = {}
 
     def __str__(self):
         return "{}:{}".format(*self.addr)
@@ -42,29 +49,72 @@ class ArtnetServer(object):
             self.handle(data)
 
     def handle(self, data):
-        # Lifted from https://github.com/bbx10/artnet-unicorn-hat/blob/master/artnet-server.py
-        if (len(data) > 18) and (data[0:8] == "Art-Net\x00"):
-            rawbytes = map(ord, data)
-            opcode = rawbytes[8] + (rawbytes[9] << 8)
-            protocolVersion = (rawbytes[10] << 8) + rawbytes[11]
-            if (opcode == 0x5000) and (protocolVersion >= 14):
-                sequence = rawbytes[12]
-                physical = rawbytes[13]
-                sub_net = (rawbytes[14] & 0xF0) >> 4
-                universe = rawbytes[14] & 0x0F
-                net = rawbytes[15]
-                rgb_length = (rawbytes[16] << 8) + rawbytes[17]
-                # print("seq %d phy %d sub_net %d uni %d net %d len %d" % (sequence, physical, sub_net, universe, net, rgb_length))
-                idx = 18
-                colors = []
-                while idx < (rgb_length + 18):
-                    r = rawbytes[idx]
-                    idx += 1
-                    g = rawbytes[idx]
-                    idx += 1
-                    b = rawbytes[idx]
-                    idx += 1
-                    colors.append((r, g, b))
+        MAX_BUFFER_ARTNET = 530
+        ART_NET_ID = 'Art-Net\0'
+        ART_DMX = 0x5000
 
-                self.cc.io.led(colors)
+        hdr, op, data = struct.unpack("<%isH%is" % (len(ART_NET_ID), len(data) - len(ART_NET_ID) - 2), data)
+
+        if hdr != ART_NET_ID:
+            print("bad header")
+            return
+
+        if op == ART_DMX:
+            # [0] == 0x00 [1] == 0x0E
+            seq = struct.unpack("<B", data[2])[0]
+            univ = struct.unpack("<H", data[4:6])[0]
+            dmxlen = struct.unpack("<H", data[6:8])[0]
+            self.handle_dmx(seq, univ, data[8:8+dmxlen])
+
+        else:
+            print("unknown op: 0x{:02X}".format(op))
+
+    def handle_dmx(self, seq, universe, data):
+        if not universe:
+            return
+
+        mask = 1 << (universe - 1)
+
+        # print("seq: {} univ: {} dlen: {}".format(seq, universe, len(data)))
+
+        colors = []
+
+        while len(data) >= 3:
+            colors.append(struct.unpack("<BBB", data[:3]))
+            data = data[3:]
+
+        if len(colors):
+            # if universe not in self.sequence:
+            #     self.sequence[universe] = []
+            #
+            # self.sequence[universe].append(colors)
+            # slen = len(self.sequence[universe])
+
+            self.cc.io.led(mask, colors)
+
+            # if slen > 3:
+            #
+            #     for idx in range(slen):
+            #         idxb = (idx - 1) % slen
+            #         diff = ArtnetServer.diff_colors(self.sequence[universe][idx], self.sequence[universe][idxb])
+            #
+            #         if diff < self.smin:
+            #             self.smin = diff
+            #             print("u{} slen: {}\tidx={}\tidxb={}\tdiff={}".format(universe, slen, idx, idxb, diff))
+            #
+            #             if universe == 1 and diff < 15:
+            #                 print("saving")
+            #                 looped = self.sequence[universe][:idxb + 1] + self.sequence[universe][idx:]
+            #                 pickle.dump(looped, file('loop1.dat', 'w'))
+            #                 sys.exit(1)
+
+    @staticmethod
+    def diff_colors(ca, cb):
+        diff = 0.0
+
+        for cai, cbi in zip(ca, cb):
+            diff += sum(math.sqrt(abs(cbc**2 - cac**2)) for cac, cbc in zip(cai, cbi))
+
+        diff /= min(len(ca), len(cb))
+        return diff
 
