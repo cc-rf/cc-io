@@ -212,10 +212,11 @@ class WaitSync(object):
 
     def process(self, data):
         if data is not None:
-            self.result.append(data)
-
             if not self.multi:
+                self.result = data
                 self.done = True
+            else:
+                self.result.append(data)
 
         else:
             self.done = True
@@ -243,24 +244,7 @@ class WaitSync(object):
     def write_wait_normal(self, *args, **kwds):
         self.done = False
         self.writer(*args, **kwds)
-
-        result = []
-
-        while 1:
-            self.sem.acquire()
-
-            res = self.result
-            self.result = []
-
-            if res is not None:
-                for itm in res:
-                    if itm is not None:
-                        ret = self.handle(*itm)
-
-                        if ret is not None:
-                            result.append(ret)
-
-            if self.done:
-                break
-
-        return result
+        self.sem.acquire()
+        res = self.result
+        self.result = None
+        return self.handle(*res)

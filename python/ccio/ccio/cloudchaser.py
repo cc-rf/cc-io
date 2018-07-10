@@ -24,15 +24,15 @@ class CloudChaser(Serf):
     CODE_ID_TRXN = 6
     CODE_ID_TRXN_REPL = 7
     CODE_ID_EVNT = 8
-    CODE_ID_RESET = 9
+    CODE_ID_PEER = 9
+    CODE_ID_RESET = 11
     CODE_ID_UART = 26
     CODE_ID_LED = 27
     CODE_ID_RAINBOW = 29
 
-    NET_EVNT_ASSOC = 0
-    NET_EVNT_PEER = 1
+    NET_EVNT_PEER = 0
     NET_EVNT_PEER_SET = 0
-    NET_EVNT_PEER_REM = 1
+    NET_EVNT_PEER_EXP = 1
 
     RESET_MAGIC = 0xD1E00D1E
 
@@ -102,28 +102,28 @@ class CloudChaser(Serf):
         self.add(
             name='send',
             code=CloudChaser.CODE_ID_SEND,
-            encode=lambda node, port, typ, data: struct.pack(
-                "<BHB%is" % len(data), node & 0xFF, port & 0xFFFF, typ & 0xFF, data
+            encode=lambda addr, port, typ, data: struct.pack(
+                "<HHB%is" % len(data), addr & 0xFFFF, port & 0xFFFF, typ & 0xFF, data
             )
         )
 
         self.add(
             name='recv',
             code=CloudChaser.CODE_ID_RECV,
-            decode=lambda data: struct.unpack("<BHB%is" % (len(data) - 4), data),
+            decode=lambda data: struct.unpack("<HHB%is" % (len(data) - 5), data),
             handle=self.handle_recv
         )
 
         def decode_trxn_stat(data):
-            node, port, typ, data = struct.unpack("<BHB%is" % (len(data) - 4), data)
+            addr, port, typ, data = struct.unpack("<HHB%is" % (len(data) - 5), data)
             # TODO: Validate/match port & type
-            return None if not node else (node, data)
+            return None if not addr else (addr, data)
 
         self.add(
             name='trxn',
             code=CloudChaser.CODE_ID_TRXN,
-            encode=lambda node, port, typ, wait, data: struct.pack(
-                "<BHBI%is" % len(data), node & 0xFF, port & 0xFFFF, typ & 0xFF, wait & 0xFFFFFFFF, data
+            encode=lambda addr, port, typ, wait, data: struct.pack(
+                "<HHBI%is" % len(data), addr & 0xFFFF, port & 0xFFFF, typ & 0xFF, wait & 0xFFFFFFFF, data
             ),
             decode=decode_trxn_stat,
             response=CloudChaser.CODE_ID_TRXN,
@@ -133,18 +133,35 @@ class CloudChaser(Serf):
         self.add(
             name='trxn_repl',
             code=CloudChaser.CODE_ID_TRXN_REPL,
-            encode=lambda node, port, typ, data: struct.pack(
-                "<BHB%is" % len(data), node & 0xFF, port & 0xFFFF, typ & 0xFF, data
+            encode=lambda addr, port, typ, data: struct.pack(
+                "<HHB%is" % len(data), addr & 0xFFFF, port & 0xFFFF, typ & 0xFF, data
             )
+        )
+
+        def decode_peer(data):
+            addr, now, data = struct.unpack("<HI%is" % (len(data) - 6), data)
+
+            peers = []
+
+            while len(data) >= 6:
+                peer, last, data = struct.unpack("<HI%is" % (len(data) - 6), data)
+
+                peers.append((peer, last))
+
+            return addr, now, peers
+
+        self.add(
+            name='peer',
+            code=CloudChaser.CODE_ID_PEER,
+            decode=decode_peer,
+            response=CloudChaser.CODE_ID_PEER
         )
 
         def decode_evnt(data):
             event, data = struct.unpack("<B%is" % (len(data) - 1), data)
 
-            if event == CloudChaser.NET_EVNT_ASSOC:
-                data = struct.unpack("<B", data[0])[0]
-            elif event == CloudChaser.NET_EVNT_PEER:
-                data = struct.unpack("<HBB", data)
+            if event == CloudChaser.NET_EVNT_PEER:
+                data = struct.unpack("<HB", data)
 
             return event, data
 
@@ -193,7 +210,7 @@ class CloudChaser(Serf):
             serial, macid, uptime // 1000, recv_count, recv_bytes, recv_error, send_count, send_bytes, send_error
         ), file=sys.stderr)
 
-    def handle_mac_recv(self, node, peer, dest, size, rssi, lqi, data):
+    def handle_mac_recv(self, addr, peer, dest, size, rssi, lqi, data):
         if self.stats is not None:
             self.stats.lock()
             if not self.stats.recv_count:
@@ -206,11 +223,11 @@ class CloudChaser(Serf):
             self.stats.unlock()
 
         if self.mac_handler is not None:
-            self.mac_handler(self, node, peer, dest, rssi, lqi, data)
+            self.mac_handler(self, addr, peer, dest, rssi, lqi, data)
 
-    def handle_recv(self, node, port, typ, data):
+    def handle_recv(self, addr, port, typ, data):
         if self.handler is not None:
-            self.handler(self, node, port, typ, data)
+            self.handler(self, addr, port, typ, data)
 
     def handle_evnt(self, event, data):
         if self.evnt_handler is not None:

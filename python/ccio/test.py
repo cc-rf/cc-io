@@ -14,13 +14,13 @@ import traceback
 import random
 
 
-def recv(cc, node, port, typ, data):
-    print("recv: node={:02X} port={:04X} typ={:02X} len={}".format(
-        node, port, typ, len(data)
+def recv(cc, addr, port, typ, data):
+    print("recv: addr={:02X} port={:04X} typ={:02X} len={}".format(
+        addr, port, typ, len(data)
     ))
 
     if port == 0x42 and typ == 0x3:
-        cc.io.trxn_repl(node, port, typ, 'rgb' * 12)
+        cc.io.trxn_repl(addr, port, typ, 'rgb' * 12)
 
 
 def command_recv(args, cc):
@@ -36,7 +36,7 @@ def command_send(args, cc):
     # elapsed = time.time() - elapsed
     # print("trxn elaps={:.3f} count={}".format(elapsed, len(rslt)))
 
-    rslt = cc.io.trxn(0x00, 0x42, 0x3, 1000, 'rgb' * 144)
+    rslt = cc.io.trxn(0x4bf2, 0x42, 0x3, 1000, 'rgb' * 144)
 
     for item in rslt:
         if not item or type(item) not in (list, tuple) or len(item) != 2:
@@ -47,13 +47,20 @@ def command_send(args, cc):
         print("trxn rslt node={:02X} data='{}'".format(node, data))
 
 
+def command_peer(args, cc):
+    node, now, peers = cc.io.peer()
+
+    print("{:04X}: time={}".format(node, now))
+
+    for peer, last in peers:
+        print("-> {:04X}: {}".format(peer, now - last))
+
+
 def net_evnt(cc, event, data):
-    if event == CloudChaser.NET_EVNT_ASSOC:
-        print("assoc: node=0x{:02X}".format(data))
-    elif event == CloudChaser.NET_EVNT_PEER:
-        addr, node, action = data
-        action = 'rem' if action == CloudChaser.NET_EVNT_PEER_REM else 'set'
-        print("peer: {} addr=0x{:04X} node=0x{:02X}".format(action, addr, node))
+    if event == CloudChaser.NET_EVNT_PEER:
+        addr, action = data
+        action = 'exp' if action == CloudChaser.NET_EVNT_PEER_EXP else 'set'
+        print("peer: {} addr=0x{:04X}".format(action, addr))
     else:
         print("unknown event 0x{:02X}".format(event))
 
@@ -106,6 +113,10 @@ def main(args):
 
     if args.command == 'send':
         command_send(args, cc)
+        sys.exit(0)
+
+    if args.command == 'peer':
+        command_peer(args, cc)
         sys.exit(0)
 
     if args.command == 'rainbow':
