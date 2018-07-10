@@ -53,7 +53,7 @@ def command_peer(args, cc):
     print("{:04X}: time={}".format(node, now))
 
     for peer, last in peers:
-        print("-> {:04X}: {}".format(peer, now - last))
+        print("-> {:04X}: {}".format(peer, last))
 
 
 def net_evnt(cc, event, data):

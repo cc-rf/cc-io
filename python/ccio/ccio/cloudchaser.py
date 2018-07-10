@@ -146,7 +146,7 @@ class CloudChaser(Serf):
             while len(data) >= 6:
                 peer, last, data = struct.unpack("<HI%is" % (len(data) - 6), data)
 
-                peers.append((peer, last))
+                peers.append((peer, now - last))
 
             return addr, now, peers
 
