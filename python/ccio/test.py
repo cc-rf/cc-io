@@ -14,16 +14,60 @@ import traceback
 import random
 
 
+def recv(cc, node, port, typ, data):
+    print("recv: node={:02X} port={:04X} typ={:02X} len={}".format(
+        node, port, typ, len(data)
+    ))
+
+    if port == 0x42 and typ == 0x3:
+        cc.io.trxn_repl(node, port, typ, 'rgb' * 12)
+
+
 def command_recv(args, cc):
     while not cc.join(1):
         pass
 
 
 def command_send(args, cc):
+    # cc.io.send(0x00, 0x42, 0x3, 'rgb' * 144)
+
+    # elapsed = time.time()
+    # rslt = cc.io.trxn(0x00, 0x42, 0x3, 2000, 'rgb' * 10)
+    # elapsed = time.time() - elapsed
+    # print("trxn elaps={:.3f} count={}".format(elapsed, len(rslt)))
+
+    rslt = cc.io.trxn(0x00, 0x42, 0x3, 1000, 'rgb' * 144)
+
+    for item in rslt:
+        if not item or type(item) not in (list, tuple) or len(item) != 2:
+            print("weird item: '{}'".format(item))
+            continue
+
+        node, data = item
+        print("trxn rslt node={:02X} data='{}'".format(node, data))
+
+
+def net_evnt(cc, event, data):
+    if event == CloudChaser.NET_EVNT_ASSOC:
+        print("assoc: node=0x{:02X}".format(data))
+    elif event == CloudChaser.NET_EVNT_PEER:
+        addr, node, action = data
+        action = 'rem' if action == CloudChaser.NET_EVNT_PEER_REM else 'set'
+        print("peer: {} addr=0x{:04X} node=0x{:02X}".format(action, addr, node))
+    else:
+        print("unknown event 0x{:02X}".format(event))
+
+
+def command_mac_recv(args, cc):
+    while not cc.join(1):
+        pass
+
+
+def command_mac_send(args, cc):
     while 1:
-        data = 'a' * 1  # ''.join(chr(n % 256) for n in range(4))
+        data = 'a' * 8  # ''.join(chr(n % 256) for n in range(4))
         # data = ''.join([chr(random.randrange(0, 0xff+1)) for _ in range(random.randrange(4, 115))])
-        cc.io.send(CloudChaser.NMAC_SEND_MESG, 0x4BF2, data)
+        cc.io.mac_send(CloudChaser.NMAC_SEND_MESG, 0x4BF2, data)
         # time.sleep(0.060)
         # sys.exit()
 
@@ -37,7 +81,8 @@ def main(args):
 
     cleanup.install(lambda: os._exit(0))
 
-    cc = CloudChaser(stats=stats)
+    cc = CloudChaser(stats=stats, handler=recv, evnt_handler=net_evnt)
+
     cc.open(args.device)
     cc.io.status()
 
@@ -45,7 +90,15 @@ def main(args):
         sys.exit(0)
 
     if args.verbose:
-        cc.handler = print_packet
+        cc.mac_handler = print_packet
+
+    if args.command == 'mac_recv':
+        command_mac_recv(args, cc)
+        sys.exit(0)
+
+    if args.command == 'mac_send':
+        command_mac_send(args, cc)
+        sys.exit(0)
 
     if args.command == 'recv':
         command_recv(args, cc)

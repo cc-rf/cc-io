@@ -32,7 +32,7 @@ class Serf(object):
         self.write = write
         self.port = None
 
-    def add(self, name, code, encode=None, decode=None, handle=None, response=None):
+    def add(self, name, code, encode=None, decode=None, handle=None, response=None, multi=False):
         if encode is None:
             encode = lambda *args, **kwds: ''
 
@@ -51,19 +51,13 @@ class Serf(object):
             if handle == self.on_frame:
                 handle = lambda *args: args
 
-            sem = threading.Semaphore(0)
-            _sync = [None, sem]
+            def _writer(*args, **kwds):
+                self._write(code, encode(*args, **kwds))
+
+            _sync = WaitSync(handle, _writer, multi)
             self._sync[response] = _sync
 
-            def _write_wait(*args, **kwds):
-                _sync[0] = False
-                self._write(code, encode(*args, **kwds))
-                sem.acquire()
-                res = _sync[0]
-                _sync[0] = None
-                return handle(*res)
-
-            self.io[name] = _write_wait
+            self.io[name] = _sync.write_wait
 
     @staticmethod
     def encode(code, data):
@@ -154,9 +148,8 @@ class Serf(object):
 
         sync = self._sync.get(code, None)
 
-        if sync is not None and sync[0] is False:
-            sync[0] = decode(data)
-            sync[1].release()
+        if sync is not None:
+            sync.process(decode(data))
         else:
             handler(*decode(data))
 
@@ -196,3 +189,78 @@ class Serf(object):
         except:
             traceback.print_exc()
 
+
+class WaitSync(object):
+    sem = None
+    multi = False
+    result = []
+    handle = None
+    writer = None
+    done = False
+
+    def __init__(self, handle, writer, multi):
+        self.sem = threading.Semaphore(0)
+        self.handle = handle
+        self.writer = writer
+        self.multi = multi
+        self.result = []
+
+        if multi:
+            self.write_wait = self.write_wait_multi
+        else:
+            self.write_wait = self.write_wait_normal
+
+    def process(self, data):
+        if data is not None:
+            self.result.append(data)
+
+            if not self.multi:
+                self.done = True
+
+        else:
+            self.done = True
+
+        self.sem.release()
+
+    def write_wait_multi(self, *args, **kwds):
+        self.done = False
+        self.writer(*args, **kwds)
+
+        while 1:
+            self.sem.acquire()
+
+            result = self.result
+            self.result = []
+
+            if result is not None:
+                for item in result:
+                    if item is not None:
+                        yield self.handle(*item)
+
+            if self.done:
+                break
+
+    def write_wait_normal(self, *args, **kwds):
+        self.done = False
+        self.writer(*args, **kwds)
+
+        result = []
+
+        while 1:
+            self.sem.acquire()
+
+            res = self.result
+            self.result = []
+
+            if res is not None:
+                for itm in res:
+                    if itm is not None:
+                        ret = self.handle(*itm)
+
+                        if ret is not None:
+                            result.append(ret)
+
+            if self.done:
+                break
+
+        return result
