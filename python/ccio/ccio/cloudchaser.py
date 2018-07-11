@@ -245,8 +245,8 @@ class CloudChaser(Serf):
     def handle_status(self, version, serial, uptime, macid, phy_stat, mac_stat, net_stat):
         print("Cloud Chaser {:016X}@{:04X} up={}s rx={}/{}/{} tx={}/{}/{}".format(
             serial, macid, uptime // 1000,
-            phy_stat.recv.count, phy_stat.recv.size, phy_stat.recv.error,
-            phy_stat.send.count, phy_stat.send.size, phy_stat.send.error
+            net_stat.recv.count, net_stat.recv.size, net_stat.recv.error,
+            net_stat.send.count, net_stat.send.size, net_stat.send.error
         ), file=sys.stderr)
 
     def handle_mac_recv(self, addr, peer, dest, size, rssi, lqi, data):
