@@ -11,16 +11,27 @@ import os
 import time
 import argparse
 import traceback
+import threading
 import random
 
 
 def recv(cc, addr, port, typ, data):
-    print("recv: addr={:02X} port={:04X} typ={:02X} len={}".format(
-        addr, port, typ, len(data)
-    ))
+    # print("recv: addr={:02X} port={:04X} typ={:02X} len={}".format(
+    #     addr, port, typ, len(data)
+    # ))
+
+    if port == 0x41 and typ == 0x0:
+        return cc.io.send(addr, port, typ + 1, '')
+
+    if port == 0x41 and typ == 0x1:
+        cc.saved_time = time.time() - cc.saved_time
+        cc.user_sync.release()
+        return
 
     if port == 0x42 and typ == 0x3:
-        cc.io.trxn_repl(addr, port, typ, 'rgb' * 12)
+        return cc.io.resp(addr, port, typ, '')
+
+    pass
 
 
 def command_recv(args, cc):
@@ -28,23 +39,45 @@ def command_recv(args, cc):
         pass
 
 
+def command_ping(args, cc):
+    addr = int(args.param[0], 16)
+
+    cc.user_sync = threading.Semaphore(0)
+    cc.saved_time = time.time()
+    cc.io.send(addr, 0x41, 0x0, '')
+    cc.user_sync.acquire()
+
+    print("ping time={:.3f}".format(cc.saved_time))
+
+
 def command_send(args, cc):
-    # cc.io.send(0x00, 0x42, 0x3, 'rgb' * 144)
+    # while 1:
+    #     cc.io.mesg(0x4BF2, 0x40, 0x0, '')
+
+    # print("trxn", list(cc.io.trxn(0x4BF2, 0x42, 0x3, 2000, 'hi' * 16)))
+
+    while 1:
+        rslt = list(cc.io.trxn(0x4BF2, 0x42, 0x3, 2000, 'd' * 113))
+
+        if not rslt:
+            break
+
+        # time.sleep(0.0333)
 
     # elapsed = time.time()
-    # rslt = cc.io.trxn(0x00, 0x42, 0x3, 2000, 'rgb' * 10)
+    # rslt = list(cc.io.trxn(0x4BC9, 0x42, 0x3, 2000, 'hi' * 10))
     # elapsed = time.time() - elapsed
     # print("trxn elaps={:.3f} count={}".format(elapsed, len(rslt)))
 
-    rslt = cc.io.trxn(0x4bf2, 0x42, 0x3, 1000, 'rgb' * 144)
-
-    for item in rslt:
-        if not item or type(item) not in (list, tuple) or len(item) != 2:
-            print("weird item: '{}'".format(item))
-            continue
-
-        node, data = item
-        print("trxn rslt node={:02X} data='{}'".format(node, data))
+    # rslt = list(cc.io.trxn(0x0000, 0x42, 0x3, 500, 'rgb' * 144))
+    #
+    # for item in rslt:
+    #     if not item or type(item) not in (list, tuple) or len(item) != 2:
+    #         print("weird item: '{}'".format(item))
+    #         continue
+    #
+    #     node, data = item
+    #     print("trxn rslt node={:02X} data='{}'".format(node, data))
 
 
 def command_peer(args, cc):
@@ -72,7 +105,7 @@ def command_mac_recv(args, cc):
 
 def command_mac_send(args, cc):
     while 1:
-        data = 'a' * 8  # ''.join(chr(n % 256) for n in range(4))
+        data = 'a' * 1  # ''.join(chr(n % 256) for n in range(4))
         # data = ''.join([chr(random.randrange(0, 0xff+1)) for _ in range(random.randrange(4, 115))])
         cc.io.mac_send(CloudChaser.NMAC_SEND_MESG, 0x4BF2, data)
         # time.sleep(0.060)
@@ -109,6 +142,10 @@ def main(args):
 
     if args.command == 'recv':
         command_recv(args, cc)
+        sys.exit(0)
+
+    if args.command == 'ping':
+        command_ping(args, cc)
         sys.exit(0)
 
     if args.command == 'send':

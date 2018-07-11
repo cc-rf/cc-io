@@ -168,12 +168,14 @@ class CloudChaser(Serf):
         )
 
         self.add(
-            name='trxn_repl',
+            name='mesg',
             code=CloudChaser.CODE_ID_TRXN_REPL,
             encode=lambda addr, port, typ, data: struct.pack(
                 "<HHB%is" % len(data), addr & 0xFFFF, port & 0xFFFF, typ & 0xFF, data
             )
         )
+
+        self.io['resp'] = self.io['mesg']
 
         def decode_peer(data):
             addr, now, data = struct.unpack("<HI%is" % (len(data) - 6), data)
