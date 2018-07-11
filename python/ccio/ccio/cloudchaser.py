@@ -43,6 +43,34 @@ class CloudChaser(Serf):
 
     __CODE_SEND_WAIT = 1
 
+    class StatItem(object):
+        count = 0
+        size = 0
+        error = 0
+
+        def __init__(self, count, size, error):
+            self.count = count
+            self.size = size
+            self.error = error
+
+    class Stat(object):
+        recv = None
+        send = None
+
+        def __init__(self, recv, send):
+            self.recv = recv
+            self.send = send
+
+        @staticmethod
+        def build(data):
+            recv_count, recv_size, recv_error, data = struct.unpack("<III%is" % (len(data) - 12), data)
+            send_count, send_size, send_error, data = struct.unpack("<III%is" % (len(data) - 12), data)
+
+            return CloudChaser.Stat(
+                CloudChaser.StatItem(recv_count, recv_size, recv_error),
+                CloudChaser.StatItem(send_count, send_size, send_error)
+            ), data
+
     def __init__(self, stats=None, handler=None, evnt_handler=None, mac_handler=None):
         super(CloudChaser, self).__init__()
         
@@ -65,10 +93,19 @@ class CloudChaser(Serf):
             encode=lambda: struct.pack("<I", CloudChaser.RESET_MAGIC)
         )
 
+        def decode_status(data):
+            version, serial, uptime, macid, data = struct.unpack("<IQIH%is" % (len(data) - 18), data)
+
+            phy_stat, data = CloudChaser.Stat.build(data)
+            mac_stat, data = CloudChaser.Stat.build(data)
+            net_stat, data = CloudChaser.Stat.build(data)
+
+            return version, serial, uptime, macid, phy_stat, mac_stat, net_stat
+
         self.add(
             name='status',
             code=CloudChaser.CODE_ID_STATUS,
-            decode=lambda data: struct.unpack("<IQIHIIIIII%is" % (len(data) - 42), data)[:-1],
+            decode=decode_status,
             handle=self.handle_status,
             response=CloudChaser.CODE_ID_STATUS
         )
@@ -205,9 +242,11 @@ class CloudChaser(Serf):
         else:
             self.close()
 
-    def handle_status(self, version, serial, uptime, macid, recv_count, recv_bytes, recv_error, send_count, send_bytes, send_error):
+    def handle_status(self, version, serial, uptime, macid, phy_stat, mac_stat, net_stat):
         print("Cloud Chaser {:016X}@{:04X} up={}s rx={}/{}/{} tx={}/{}/{}".format(
-            serial, macid, uptime // 1000, recv_count, recv_bytes, recv_error, send_count, send_bytes, send_error
+            serial, macid, uptime // 1000,
+            phy_stat.recv.count, phy_stat.recv.size, phy_stat.recv.error,
+            phy_stat.send.count, phy_stat.send.size, phy_stat.send.error
         ), file=sys.stderr)
 
     def handle_mac_recv(self, addr, peer, dest, size, rssi, lqi, data):
@@ -226,6 +265,15 @@ class CloudChaser(Serf):
             self.mac_handler(self, addr, peer, dest, rssi, lqi, data)
 
     def handle_recv(self, addr, port, typ, data):
+        if self.stats is not None:
+            self.stats.lock()
+            if not self.stats.recv_count:
+                self.stats.recv_time = time.time()
+
+            self.stats.recv_size += len(data)
+            self.stats.recv_count += 1
+            self.stats.unlock()
+
         if self.handler is not None:
             self.handler(self, addr, port, typ, data)
 
