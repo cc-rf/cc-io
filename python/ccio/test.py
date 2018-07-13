@@ -29,6 +29,7 @@ def recv(cc, addr, port, typ, data):
         return
 
     if port == 0x42 and typ == 0x3:
+        # return cc.io.resp(addr, port, typ, 'b' * random.randrange(0, 16))
         return cc.io.resp(addr, port, typ, '')
 
     pass
@@ -52,32 +53,33 @@ def command_ping(args, cc):
 
 def command_send(args, cc):
     # while 1:
-    #     cc.io.mesg(0x4BF2, 0x40, 0x0, '')
+    #     cc.io.send(0x4BF2, 0x40, 0x0, 'rgb' * 144)
 
     # print("trxn", list(cc.io.trxn(0x4BF2, 0x42, 0x3, 2000, 'hi' * 16)))
 
-    while 1:
-        rslt = list(cc.io.trxn(0x4BF2, 0x42, 0x3, 2000, 'd' * 113))
-
-        if not rslt:
-            break
-
-        # time.sleep(0.0333)
+    # while 1:
+    #     # rslt = list(cc.io.trxn(0x4BF2, 0x42, 0x3, 5000, 'a' * random.randrange(4, 113)))
+    #     rslt = list(cc.io.trxn(0x0000, 0x42, 0x3, 5000, 'rgb' * 144))
+    #
+    #     if not rslt:
+    #         break
+    #
+    #     # time.sleep(0.0333)
 
     # elapsed = time.time()
-    # rslt = list(cc.io.trxn(0x4BC9, 0x42, 0x3, 2000, 'hi' * 10))
+    # rslt = list(cc.io.trxn(0x4BF2, 0x42, 0x3, 2000, 'rgb' * 144))
     # elapsed = time.time() - elapsed
     # print("trxn elaps={:.3f} count={}".format(elapsed, len(rslt)))
 
-    # rslt = list(cc.io.trxn(0x0000, 0x42, 0x3, 500, 'rgb' * 144))
-    #
-    # for item in rslt:
-    #     if not item or type(item) not in (list, tuple) or len(item) != 2:
-    #         print("weird item: '{}'".format(item))
-    #         continue
-    #
-    #     node, data = item
-    #     print("trxn rslt node={:02X} data='{}'".format(node, data))
+    rslt = list(cc.io.trxn(0x0000, 0x42, 0x3, 1500, 'rgb' * 144))
+
+    for item in rslt:
+        if not item or type(item) not in (list, tuple) or len(item) != 2:
+            print("weird item: '{}'".format(item))
+            continue
+
+        node, data = item
+        print("trxn rslt node={:02X} data='{}'".format(node, data))
 
 
 def command_peer(args, cc):
@@ -105,7 +107,7 @@ def command_mac_recv(args, cc):
 
 def command_mac_send(args, cc):
     while 1:
-        data = 'a' * 1  # ''.join(chr(n % 256) for n in range(4))
+        data = 'a' * 16  # ''.join(chr(n % 256) for n in range(4))
         # data = ''.join([chr(random.randrange(0, 0xff+1)) for _ in range(random.randrange(4, 115))])
         cc.io.mac_send(CloudChaser.NMAC_SEND_MESG, 0x4BF2, data)
         # time.sleep(0.060)
@@ -124,9 +126,23 @@ def main(args):
     cc = CloudChaser(stats=stats, handler=recv, evnt_handler=net_evnt)
 
     cc.open(args.device)
-    cc.io.status()
+    mac_stat, phy_stat = cc.io.status()
 
     if args.command == 'status':
+        sys.exit(0)
+
+    if args.command == 'status-ll':
+        
+        print("mac: rx={}/{}/{} tx={}/{}/{}".format(
+            mac_stat.recv.count, mac_stat.recv.size, mac_stat.recv.error,
+            mac_stat.send.count, mac_stat.send.size, mac_stat.send.error
+        ), file=sys.stderr)
+
+        print("phy: rx={}/{}/{} tx={}/{}/{}".format(
+            phy_stat.recv.count, phy_stat.recv.size, phy_stat.recv.error,
+            phy_stat.send.count, phy_stat.send.size, phy_stat.send.error
+        ), file=sys.stderr)
+
         sys.exit(0)
 
     if args.verbose:

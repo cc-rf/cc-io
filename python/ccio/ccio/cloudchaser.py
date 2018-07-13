@@ -20,12 +20,14 @@ class CloudChaser(Serf):
     CODE_ID_MAC_SEND = 2
     CODE_ID_MAC_RECV = 3
     CODE_ID_SEND = 4
-    CODE_ID_RECV = 5
-    CODE_ID_TRXN = 6
-    CODE_ID_TRXN_REPL = 7
-    CODE_ID_EVNT = 8
-    CODE_ID_PEER = 9
-    CODE_ID_RESET = 11
+    CODE_ID_MESG = 5
+    CODE_ID_MESG_SENT = 5
+    CODE_ID_RECV = 6
+    CODE_ID_TRXN = 7
+    CODE_ID_RESP = 8
+    CODE_ID_EVNT = 9
+    CODE_ID_PEER = 10
+    CODE_ID_RESET = 17
     CODE_ID_UART = 26
     CODE_ID_LED = 27
     CODE_ID_RAINBOW = 29
@@ -78,6 +80,12 @@ class CloudChaser(Serf):
         self.handler = handler
         self.evnt_handler = evnt_handler
         self.mac_handler = mac_handler
+        self.queue = []
+        self.queue_sync = threading.Semaphore(0)
+
+        thr = threading.Thread(target=self._queue_thread, args=())
+        thr.setDaemon(True)
+        thr.start()
 
         self.add(
             name='echo',
@@ -145,6 +153,24 @@ class CloudChaser(Serf):
         )
 
         self.add(
+            name='mesg',
+            code=CloudChaser.CODE_ID_MESG,
+            encode=lambda addr, port, typ, data: struct.pack(
+                "<HHB%is" % len(data), addr & 0xFFFF, port & 0xFFFF, typ & 0xFF, data
+            ),
+            decode=lambda data: struct.unpack("<H", data),
+            response=CloudChaser.CODE_ID_MESG_SENT
+        )
+
+        self.add(
+            name='resp',
+            code=CloudChaser.CODE_ID_RESP,
+            encode=lambda addr, port, typ, data: struct.pack(
+                "<HHB%is" % len(data), addr & 0xFFFF, port & 0xFFFF, typ & 0xFF, data
+            )
+        )
+
+        self.add(
             name='recv',
             code=CloudChaser.CODE_ID_RECV,
             decode=lambda data: struct.unpack("<HHB%is" % (len(data) - 5), data),
@@ -166,16 +192,6 @@ class CloudChaser(Serf):
             response=CloudChaser.CODE_ID_TRXN,
             multi=True
         )
-
-        self.add(
-            name='mesg',
-            code=CloudChaser.CODE_ID_TRXN_REPL,
-            encode=lambda addr, port, typ, data: struct.pack(
-                "<HHB%is" % len(data), addr & 0xFFFF, port & 0xFFFF, typ & 0xFF, data
-            )
-        )
-
-        self.io['resp'] = self.io['mesg']
 
         def decode_peer(data):
             addr, now, data = struct.unpack("<HI%is" % (len(data) - 6), data)
@@ -244,12 +260,26 @@ class CloudChaser(Serf):
         else:
             self.close()
 
+    def _queue_thread(self):
+        while 1:
+            self.queue_sync.acquire()
+            proc, args = self.queue.pop(0)
+
+            try:
+                proc(*args)
+            except KeyboardInterrupt:
+                sys.exit(0)
+            except:
+                traceback.print_exc()
+
     def handle_status(self, version, serial, uptime, macid, phy_stat, mac_stat, net_stat):
         print("Cloud Chaser {:016X}@{:04X} up={}s rx={}/{}/{} tx={}/{}/{}".format(
             serial, macid, uptime // 1000,
             net_stat.recv.count, net_stat.recv.size, net_stat.recv.error,
             net_stat.send.count, net_stat.send.size, net_stat.send.error
         ), file=sys.stderr)
+
+        return mac_stat, phy_stat
 
     def handle_mac_recv(self, addr, peer, dest, size, rssi, lqi, data):
         if self.stats is not None:
@@ -264,7 +294,8 @@ class CloudChaser(Serf):
             self.stats.unlock()
 
         if self.mac_handler is not None:
-            self.mac_handler(self, addr, peer, dest, rssi, lqi, data)
+            self.queue.append((self.mac_handler, (self, addr, peer, dest, rssi, lqi, data)))
+            self.queue_sync.release()
 
     def handle_recv(self, addr, port, typ, data):
         if self.stats is not None:
@@ -277,11 +308,13 @@ class CloudChaser(Serf):
             self.stats.unlock()
 
         if self.handler is not None:
-            self.handler(self, addr, port, typ, data)
+            self.queue.append((self.handler, (self, addr, port, typ, data)))
+            self.queue_sync.release()
 
     def handle_evnt(self, event, data):
         if self.evnt_handler is not None:
-            self.evnt_handler(self, event, data)
+            self.queue.append((self.evnt_handler, (self, event, data)))
+            self.queue_sync.release()
 
     def handle_uart(self, code, data):
         pass

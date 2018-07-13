@@ -29,6 +29,9 @@ class Serf(object):
         self.serial = None
         self._sync = {}
         self._thread_input = None
+        self._thread_write = None
+        self._write_queue = []
+        self._write_sync = threading.Semaphore(0)
         self.write = write
         self.port = None
 
@@ -96,9 +99,14 @@ class Serf(object):
         self.port = self.serial.port = tty
         self.serial.baudrate = baud
         self.serial.open()
+
         self._thread_input = threading.Thread(target=self._input_thread)
         self._thread_input.setDaemon(True)
         self._thread_input.start()
+
+        self._thread_write = threading.Thread(target=self._write_thread)
+        self._thread_write.setDaemon(True)
+        self._thread_write.start()
 
     def close(self):
         try:
@@ -134,7 +142,9 @@ class Serf(object):
 
     def _write(self, code, data):
         if self.serial is not None:
-            self.serial.write(Serf.encode(code, data))
+            self._write_queue.append((code, data))
+            self._write_sync.release()
+
         elif self.write is not None:
             self.write(Serf.encode(code, data))
         else:
@@ -152,6 +162,19 @@ class Serf(object):
             sync.process(decode(data))
         else:
             handler(*decode(data))
+
+    def _write_thread(self):
+        while 1:
+            self._write_sync.acquire()
+            code, data = self._write_queue.pop(0)
+
+            try:
+                self.serial.write(Serf.encode(code, data))
+
+            except KeyboardInterrupt:
+                sys.exit(0)
+            except:
+                traceback.print_exc()
 
     def _input_thread(self):
         try:
