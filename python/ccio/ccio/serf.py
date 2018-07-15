@@ -30,8 +30,11 @@ class Serf(object):
         self._sync = {}
         self._thread_input = None
         self._thread_write = None
+        self._thread_proc = None
         self._write_queue = []
         self._write_sync = threading.Semaphore(0)
+        self._proc_queue = []
+        self._proc_sync = threading.Semaphore(0)
         self.write = write
         self.port = None
 
@@ -108,6 +111,10 @@ class Serf(object):
         self._thread_write.setDaemon(True)
         self._thread_write.start()
 
+        self._thread_proc = threading.Thread(target=self._proc_thread)
+        self._thread_proc.setDaemon(True)
+        self._thread_proc.start()
+
     def close(self):
         try:
             self.serial.close()
@@ -150,19 +157,6 @@ class Serf(object):
         else:
             print >>sys.stderr, "no output method: code=0x%02X len=%u" % (code, len(data))
 
-    def on_frame(self, code, data):
-        print >>sys.stderr, "unhandled: code=0x%02X len=%u" % (code, len(data))
-
-    def process(self, code, data):
-        encode, decode, handler = self.codes.get(code, (None, lambda data: (code, data), self.on_frame))
-
-        sync = self._sync.get(code, None)
-
-        if sync is not None:
-            sync.process(decode(data))
-        else:
-            handler(*decode(data))
-
     def _write_thread(self):
         while 1:
             self._write_sync.acquire()
@@ -175,6 +169,33 @@ class Serf(object):
                 sys.exit(0)
             except:
                 traceback.print_exc()
+
+    def process(self, code, data):
+        encode, decode, handler = self.codes.get(code, (None, lambda data: (code, data), self.on_frame))
+
+        sync = self._sync.get(code, None)
+
+        if sync is not None:
+            sync.process(decode(data))
+        else:
+            self._proc_queue.append((handler, decode, data))
+            self._proc_sync.release()
+
+    def _proc_thread(self):
+        while 1:
+            self._proc_sync.acquire()
+            handler, decode, data = self._proc_queue.pop(0)
+
+            try:
+                handler(*decode(data))
+
+            except KeyboardInterrupt:
+                sys.exit(0)
+            except:
+                traceback.print_exc()
+
+    def on_frame(self, code, data):
+        print >>sys.stderr, "unhandled: code=0x%02X len=%u" % (code, len(data))
 
     def _input_thread(self):
         try:

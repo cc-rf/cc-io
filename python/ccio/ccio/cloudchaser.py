@@ -80,12 +80,6 @@ class CloudChaser(Serf):
         self.handler = handler
         self.evnt_handler = evnt_handler
         self.mac_handler = mac_handler
-        self.queue = []
-        self.queue_sync = threading.Semaphore(0)
-
-        thr = threading.Thread(target=self._queue_thread, args=())
-        thr.setDaemon(True)
-        thr.start()
 
         self.add(
             name='echo',
@@ -198,10 +192,10 @@ class CloudChaser(Serf):
 
             peers = []
 
-            while len(data) >= 6:
-                peer, last, data = struct.unpack("<HI%is" % (len(data) - 6), data)
+            while len(data) >= 10:
+                addri, peer, last, rssi, lqi, data = struct.unpack("<HHIbB%is" % (len(data) - 10), data)
 
-                peers.append((peer, now - last))
+                peers.append((addri, peer, last, rssi, lqi))
 
             return addr, now, peers
 
@@ -260,18 +254,6 @@ class CloudChaser(Serf):
         else:
             self.close()
 
-    def _queue_thread(self):
-        while 1:
-            self.queue_sync.acquire()
-            proc, args = self.queue.pop(0)
-
-            try:
-                proc(*args)
-            except KeyboardInterrupt:
-                sys.exit(0)
-            except:
-                traceback.print_exc()
-
     def handle_status(self, version, serial, uptime, macid, phy_stat, mac_stat, net_stat):
         print("Cloud Chaser {:016X}@{:04X} up={}s rx={}/{}/{} tx={}/{}/{}".format(
             serial, macid, uptime // 1000,
@@ -294,8 +276,7 @@ class CloudChaser(Serf):
             self.stats.unlock()
 
         if self.mac_handler is not None:
-            self.queue.append((self.mac_handler, (self, addr, peer, dest, rssi, lqi, data)))
-            self.queue_sync.release()
+            self.mac_handler(self, addr, peer, dest, rssi, lqi, data)
 
     def handle_recv(self, addr, port, typ, data):
         if self.stats is not None:
@@ -308,13 +289,11 @@ class CloudChaser(Serf):
             self.stats.unlock()
 
         if self.handler is not None:
-            self.queue.append((self.handler, (self, addr, port, typ, data)))
-            self.queue_sync.release()
+            self.handler(self, addr, port, typ, data)
 
     def handle_evnt(self, event, data):
         if self.evnt_handler is not None:
-            self.queue.append((self.evnt_handler, (self, event, data)))
-            self.queue_sync.release()
+            self.evnt_handler(self, event, data)
 
     def handle_uart(self, code, data):
         pass

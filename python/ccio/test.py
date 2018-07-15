@@ -15,10 +15,16 @@ import threading
 import random
 
 
+pipe = [0xFFFF, 0, 0]
+
+
 def recv(cc, addr, port, typ, data):
     # print("recv: addr={:02X} port={:04X} typ={:02X} len={}".format(
     #     addr, port, typ, len(data)
     # ))
+
+    if not pipe[0] or (pipe[0] == addr and pipe[1] == port and pipe[2] == typ):
+        sys.stdout.write(data)
 
     if port == 0x41 and typ == 0x0:
         return cc.io.send(addr, port, typ + 1, '')
@@ -29,8 +35,7 @@ def recv(cc, addr, port, typ, data):
         return
 
     if port == 0x42 and typ == 0x3:
-        # return cc.io.resp(addr, port, typ, 'b' * random.randrange(0, 16))
-        return cc.io.resp(addr, port, typ, '')
+        cc.io.resp(addr, port, typ, 'b' * random.randrange(2, 24))
 
     pass
 
@@ -53,33 +58,34 @@ def command_ping(args, cc):
 
 def command_send(args, cc):
     # while 1:
-    #     cc.io.send(0x4BF2, 0x40, 0x0, 'rgb' * 144)
+    #     cc.io.send(0x0000, 0x42, 0x3, '')
+    #     time.sleep(0.500)
 
     # print("trxn", list(cc.io.trxn(0x4BF2, 0x42, 0x3, 2000, 'hi' * 16)))
 
-    # while 1:
-    #     # rslt = list(cc.io.trxn(0x4BF2, 0x42, 0x3, 5000, 'a' * random.randrange(4, 113)))
-    #     rslt = list(cc.io.trxn(0x0000, 0x42, 0x3, 5000, 'rgb' * 144))
-    #
-    #     if not rslt:
-    #         break
-    #
-    #     # time.sleep(0.0333)
+    while 1:
+        # rslt = list(cc.io.trxn(0x4BF2, 0x42, 0x3, 5000, 'a' * random.randrange(4, 113)))
+        rslt = list(cc.io.trxn(0x4BF2, 0x42, 0x3, 1000, 'rgb' * 144))
+
+        if not rslt:
+            break
+
+        # time.sleep(0.014)
 
     # elapsed = time.time()
     # rslt = list(cc.io.trxn(0x4BF2, 0x42, 0x3, 2000, 'rgb' * 144))
     # elapsed = time.time() - elapsed
     # print("trxn elaps={:.3f} count={}".format(elapsed, len(rslt)))
 
-    rslt = list(cc.io.trxn(0x0000, 0x42, 0x3, 1500, 'rgb' * 144))
-
-    for item in rslt:
-        if not item or type(item) not in (list, tuple) or len(item) != 2:
-            print("weird item: '{}'".format(item))
-            continue
-
-        node, data = item
-        print("trxn rslt node={:02X} data='{}'".format(node, data))
+    # rslt = list(cc.io.trxn(0x0000, 0x42, 0x3, 100, 'a' * 113))
+    #
+    # for item in rslt:
+    #     if not item or type(item) not in (list, tuple) or len(item) != 2:
+    #         print("weird item: '{}'".format(item))
+    #         continue
+    #
+    #     node, data = item
+    #     print("trxn rslt node={:02X} data='{}'".format(node, data))
 
 
 def command_peer(args, cc):
@@ -87,8 +93,24 @@ def command_peer(args, cc):
 
     print("{:04X}: time={}".format(node, now))
 
-    for peer, last in peers:
-        print("-> {:04X}: {}".format(peer, last))
+    for addr, peer, last, rssi, lqi in peers:
+        print("-> {:04X}/{:04X}: t={} q={} r={}".format(addr, peer, last, lqi, rssi))
+
+
+def command_pipe(args, cc):
+    addr, port, typ = args.param
+
+    addr = int(addr, 16)
+    port = int(port)
+    typ = int(typ)
+
+    pipe[:] = [addr, port, typ]
+
+    while 1:
+        data = sys.stdin.read(4096)
+
+        if data:
+            cc.io.send(addr, port, typ, data)
 
 
 def net_evnt(cc, event, data):
@@ -170,6 +192,10 @@ def main(args):
 
     if args.command == 'peer':
         command_peer(args, cc)
+        sys.exit(0)
+
+    if args.command == 'pipe':
+        command_pipe(args, cc)
         sys.exit(0)
 
     if args.command == 'rainbow':

@@ -90,7 +90,10 @@ class ArtnetServer(object):
             # self.sequence[universe].append(colors)
             # slen = len(self.sequence[universe])
 
-            self.cc.io.led(mask, colors)
+            if mask & 1:
+                self.cc.io.led(0x4BD3, 3, colors)
+            else:
+                pass
 
             # if slen > 3:
             #
