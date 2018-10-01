@@ -13,6 +13,7 @@ import argparse
 import traceback
 import threading
 import random
+from subprocess import call
 
 
 pipe = [0xFFFF, 0, 0]
@@ -57,20 +58,20 @@ def command_ping(args, cc):
 
 
 def command_send(args, cc):
-    # while 1:
-    #     cc.io.send(0x0000, 0x42, 0x3, '')
-    #     time.sleep(0.500)
+    while 1:
+        cc.io.send(0x4BF2, 0x40, 0x0, 'a' * 113)
+        # time.sleep(0.500)
 
     # print("trxn", list(cc.io.trxn(0x4BF2, 0x42, 0x3, 2000, 'hi' * 16)))
 
-    while 1:
-        # rslt = list(cc.io.trxn(0x4BF2, 0x42, 0x3, 5000, 'a' * random.randrange(4, 113)))
-        rslt = list(cc.io.trxn(0x4BF2, 0x42, 0x3, 1000, 'rgb' * 144))
-
-        if not rslt:
-            break
-
-        # time.sleep(0.014)
+    # while 1:
+    #     # rslt = list(cc.io.trxn(0x4BF2, 0x42, 0x3, 5000, 'a' * random.randrange(4, 113)))
+    #     rslt = list(cc.io.trxn(0x4BF2, 0x42, 0x3, 1000, 'rgb' * 144))
+    #
+    #     if not rslt:
+    #         break
+    #
+    #     # time.sleep(0.014)
 
     # elapsed = time.time()
     # rslt = list(cc.io.trxn(0x4BF2, 0x42, 0x3, 2000, 'rgb' * 144))
@@ -88,6 +89,10 @@ def command_send(args, cc):
     #     print("trxn rslt node={:02X} data='{}'".format(node, data))
 
 
+def show_date():
+    call(['date'])
+
+
 def command_peer(args, cc):
     node, now, peers = cc.io.peer()
 
@@ -95,6 +100,8 @@ def command_peer(args, cc):
 
     for addr, peer, last, rssi, lqi in peers:
         print("-> {:04X}/{:04X}: t={} q={} r={}".format(addr, peer, last, lqi, rssi))
+
+    show_date()
 
 
 def command_pipe(args, cc):
@@ -120,6 +127,8 @@ def net_evnt(cc, event, data):
         print("peer: {} addr=0x{:04X}".format(action, addr))
     else:
         print("unknown event 0x{:02X}".format(event))
+
+    show_date()
 
 
 def command_mac_recv(args, cc):
@@ -149,6 +158,8 @@ def main(args):
 
     cc.open(args.device)
     mac_stat, phy_stat = cc.io.status()
+
+    show_date()
 
     if args.command == 'status':
         sys.exit(0)
