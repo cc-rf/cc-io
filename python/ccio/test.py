@@ -38,7 +38,22 @@ def recv(cc, addr, port, typ, data):
     if port == 0x42 and typ == 0x3:
         cc.io.resp(addr, port, typ, 'b' * random.randrange(2, 24))
 
+    if port == 0x01E0 and typ == 0x0D:
+        print("uart-msg:", data)
+
     pass
+
+
+def command_uart(args, cc):
+    while 1:
+        data = sys.stdin.read()
+        print("uart-tx: s={}".format(len(data)))
+        cc.io.send(0x0000, 0x01E0, 0x0D, data)
+        # cc.io.uart(data)
+
+
+def uart_recv(cc, data):
+    print("uart-rx:", data)
 
 
 def command_recv(args, cc):
@@ -154,7 +169,7 @@ def main(args):
 
     cleanup.install(lambda: os._exit(0))
 
-    cc = CloudChaser(stats=stats, handler=recv, evnt_handler=net_evnt)
+    cc = CloudChaser(stats=stats, handler=recv, evnt_handler=net_evnt, uart_handler=uart_recv)
 
     cc.open(args.device)
     mac_stat, phy_stat = cc.io.status()
@@ -187,6 +202,10 @@ def main(args):
 
     if args.command == 'mac_send':
         command_mac_send(args, cc)
+        sys.exit(0)
+
+    if args.command == 'uart':
+        command_uart(args, cc)
         sys.exit(0)
 
     if args.command == 'recv':

@@ -73,13 +73,14 @@ class CloudChaser(Serf):
                 CloudChaser.StatItem(send_count, send_size, send_error)
             ), data
 
-    def __init__(self, stats=None, handler=None, evnt_handler=None, mac_handler=None):
+    def __init__(self, stats=None, handler=None, evnt_handler=None, mac_handler=None, uart_handler=None):
         super(CloudChaser, self).__init__()
         
         self.stats = stats
         self.handler = handler
         self.evnt_handler = evnt_handler
         self.mac_handler = mac_handler
+        self.uart_handler = uart_handler
 
         self.add(
             name='echo',
@@ -224,8 +225,8 @@ class CloudChaser(Serf):
         self.add(
             name='uart',
             code=CloudChaser.CODE_ID_UART,
-            encode=lambda data, code=0x00: struct.pack("<B", code & 0xFF) + data,
-            decode=lambda data: struct.unpack("<B%is" % (len(data) - 1), data),
+            encode=lambda data: data,
+            decode=lambda data: [data],
             handle=self.handle_uart
         )
 
@@ -295,5 +296,6 @@ class CloudChaser(Serf):
         if self.evnt_handler is not None:
             self.evnt_handler(self, event, data)
 
-    def handle_uart(self, code, data):
-        pass
+    def handle_uart(self, data):
+        if self.uart_handler is not None:
+            self.uart_handler(self, data)
