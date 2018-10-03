@@ -158,7 +158,7 @@ class Serf(object):
             print >>sys.stderr, "no output method: code=0x%02X len=%u" % (code, len(data))
 
     def _write_thread(self):
-        while 1:
+        while self.serial.isOpen():
             self._write_sync.acquire()
             code, data = self._write_queue.pop(0)
 
@@ -167,8 +167,13 @@ class Serf(object):
 
             except KeyboardInterrupt:
                 sys.exit(0)
+
+            except IOError:
+                continue
+
             except:
                 traceback.print_exc()
+                break
 
     def process(self, code, data):
         encode, decode, handler = self.codes.get(code, (None, lambda data: (code, data), self.on_frame))

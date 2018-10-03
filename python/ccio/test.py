@@ -179,8 +179,8 @@ def main(args):
     if args.command == 'status':
         sys.exit(0)
 
-    if args.command == 'status-ll':
-        
+    elif args.command == 'status-ll':
+
         print("mac: rx={}/{}/{} tx={}/{}/{}".format(
             mac_stat.recv.count, mac_stat.recv.size, mac_stat.recv.error,
             mac_stat.send.count, mac_stat.send.size, mac_stat.send.error
@@ -191,54 +191,44 @@ def main(args):
             phy_stat.send.count, phy_stat.send.size, phy_stat.send.error
         ), file=sys.stderr)
 
-        sys.exit(0)
-
-    if args.verbose:
+    elif args.verbose:
         cc.mac_handler = print_packet
 
-    if args.command == 'mac_recv':
+    elif args.command == 'mac_recv':
         command_mac_recv(args, cc)
-        sys.exit(0)
 
-    if args.command == 'mac_send':
+    elif args.command == 'mac_send':
         command_mac_send(args, cc)
-        sys.exit(0)
 
-    if args.command == 'uart':
+    elif args.command == 'uart':
         command_uart(args, cc)
-        sys.exit(0)
 
-    if args.command == 'recv':
+    elif args.command == 'recv':
         command_recv(args, cc)
-        sys.exit(0)
 
-    if args.command == 'ping':
+    elif args.command == 'ping':
         command_ping(args, cc)
-        sys.exit(0)
 
-    if args.command == 'send':
+    elif args.command == 'send':
         command_send(args, cc)
-        sys.exit(0)
 
-    if args.command == 'peer':
+    elif args.command == 'peer':
         command_peer(args, cc)
-        sys.exit(0)
 
-    if args.command == 'pipe':
+    elif args.command == 'pipe':
         command_pipe(args, cc)
-        sys.exit(0)
 
-    if args.command == 'rainbow':
+    elif args.command == 'rainbow':
         cc.io.rainbow()
 
-    if args.command == 'artnet':
+    elif args.command == 'artnet':
         import artnet
         server = artnet.ArtnetServer(cc)
         server.start()
         server.join()
         sys.exit(0)
 
-    if args.command == 'replay':
+    elif args.command == 'replay':
         infile = args.param[0]
         indata = pickle.load(file(infile, 'rb'))
 
@@ -246,6 +236,11 @@ def main(args):
             for colors in indata:
                 cc.io.led(0x01, colors)
                 time.sleep(0.04)
+
+    # Allow queued io to happen before exit
+    time.sleep(0.001)
+
+
 
 
 def print_packet(cc, node, peer, dest, rssi, lqi, data):
