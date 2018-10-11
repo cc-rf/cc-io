@@ -1,20 +1,16 @@
-#!/usr/bin/env python2
 """Serial Framed RF Device Communication Protocol
 """
+from __future__ import print_function
 import os
 import random
 import sys
 import struct
 import time
-import cobs
 import threading
 import traceback
 
-
-class AttrDict(dict):
-    def __init__(self, *args, **kwargs):
-        super(AttrDict, self).__init__(*args, **kwargs)
-        self.__dict__ = self
+from . import cobs
+from .util import AttrDict
 
 
 class Serf(object):
@@ -40,7 +36,7 @@ class Serf(object):
 
     def add(self, name, code, encode=None, decode=None, handle=None, response=None, multi=False):
         if encode is None:
-            encode = lambda *args, **kwds: ''
+            encode = lambda *args, **kwds: bytes()
 
         if decode is None:
             decode = lambda data: (code, data)
@@ -57,8 +53,7 @@ class Serf(object):
             if handle == self.on_frame:
                 handle = lambda *args: args
 
-            def _writer(*args, **kwds):
-                self._write(code, encode(*args, **kwds))
+            _writer = lambda *args, **kwds: self._write(code, encode(*args, **kwds))
 
             _sync = WaitSync(handle, _writer, multi)
             self._sync[response] = _sync
@@ -68,10 +63,11 @@ class Serf(object):
     @staticmethod
     def encode(code, data):
         if (code & Serf.SERF_CODE_M) != code:
-            print >> sys.stderr, "warning: code 0x%02X truncated to 0x%02X" % (code, code & Serf.SERF_CODE_M)
+            print("warning: code 0x{:02X} truncated to 0x{:02X}".format(code, code & Serf.SERF_CODE_M), file=sys.stderr)
 
-        frame = struct.pack("<B%is" % len(data), Serf.SERF_CODE_PROTO_VAL | (code & Serf.SERF_CODE_M), data)
-        frame = cobs.cobs_encode(frame) + '\0'
+        frame = struct.pack(f"<B{len(data)}s", Serf.SERF_CODE_PROTO_VAL | (code & Serf.SERF_CODE_M), data)
+        frame = cobs.cobs_encode(frame)
+        frame.append(0)
         return frame
 
     @staticmethod
@@ -82,14 +78,16 @@ class Serf(object):
         data = cobs.cobs_decode(data)
 
         if not len(data):
-            print >> sys.stderr, "serf: empty data"
+            print("serf: empty data", file=sys.stderr)
             return Serf.SERF_DECODE_ERROR
 
-        if (ord(data[0]) & Serf.SERF_CODE_PROTO_M) != Serf.SERF_CODE_PROTO_VAL:
-            print >> sys.stderr, "serf: bad proto val"
+        code = data[0]
+
+        if (code & Serf.SERF_CODE_PROTO_M) != Serf.SERF_CODE_PROTO_VAL:
+            print("serf: bad proto val", file=sys.stderr)
             return Serf.SERF_DECODE_ERROR
 
-        return ord(data[0]) & Serf.SERF_CODE_M, data[1:]
+        return code & Serf.SERF_CODE_M, data[1:]
 
     def open(self, tty, baud=115200):
         if self.serial is not None:
@@ -118,7 +116,7 @@ class Serf(object):
     def close(self):
         try:
             self.serial.close()
-            self.join()
+            # self.join()
             self._thread_input = None
         except:
             pass
@@ -155,7 +153,7 @@ class Serf(object):
         elif self.write is not None:
             self.write(Serf.encode(code, data))
         else:
-            print >>sys.stderr, "no output method: code=0x%02X len=%u" % (code, len(data))
+            print("no output method: code=0x{:02X} len={}".format(code, len(data)), file=sys.stderr)
 
     def _write_thread(self):
         while self.serial.isOpen():
@@ -200,24 +198,24 @@ class Serf(object):
                 traceback.print_exc()
 
     def on_frame(self, code, data):
-        print >>sys.stderr, "unhandled: code=0x%02X len=%u" % (code, len(data))
+        print("unhandled: code=0x{:02X} len={}".format(code, len(data)), file=sys.stderr)
 
     def _input_thread(self):
         try:
-            data = ''
+            data = bytearray()
 
             while self.serial.isOpen():
                 in_data = self.serial.read()
 
-                if not in_data or not len(in_data):
+                if not len(in_data):
                     continue
 
-                data = data + in_data
+                data.extend(in_data)
 
-                if '\0' not in data:
+                if 0 not in data:
                     continue
 
-                idx = data.index('\0')
+                idx = data.index(0)
 
                 result = Serf.decode(data[:idx])
 
@@ -227,7 +225,7 @@ class Serf(object):
                     except:
                         traceback.print_exc()
 
-                data = ''
+                data = bytearray()
 
         except KeyboardInterrupt:
             sys.exit(0)
@@ -273,6 +271,7 @@ class WaitSync(object):
         self.sem.release()
 
     def write_wait_multi(self, *args, **kwds):
+        self.result = []
         self.done = False
         self.writer(*args, **kwds)
 
@@ -282,18 +281,18 @@ class WaitSync(object):
             result = self.result
             self.result = []
 
-            if result is not None:
-                for item in result:
-                    if item is not None:
-                        yield self.handle(*item)
+            for item in result:
+                yield self.handle(*item)
 
             if self.done:
                 break
 
     def write_wait_normal(self, *args, **kwds):
+        self.result = []
         self.done = False
         self.writer(*args, **kwds)
         self.sem.acquire()
         res = self.result
         self.result = None
-        return self.handle(*res)
+        res = self.handle(*res)
+        return res[0] if len(res) == 1 else res

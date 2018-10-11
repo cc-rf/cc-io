@@ -1,7 +1,5 @@
-#!/usr/bin/env python2
 """Cloud Chaser Support Library
 """
-from __future__ import print_function
 import os
 import sys
 import struct
@@ -9,9 +7,9 @@ import time
 import random
 import threading
 import traceback
-import cleanup
-from serf import Serf
-from stats import Stats
+
+from .serf import Serf
+from .util import AttrDict
 
 
 class CloudChaser(Serf):
@@ -36,6 +34,12 @@ class CloudChaser(Serf):
     NET_EVNT_PEER_SET = 0
     NET_EVNT_PEER_EXP = 1
 
+    NET_ADDR_BCST = 0
+    NET_ADDR_MASK = 0xFFFF
+
+    NET_PORT_MASK = 0b1111111111
+    NET_TYPE_MASK = 0b1111
+
     RESET_MAGIC = 0xD1E00D1E
 
     NMAC_SEND_DGRM = 0
@@ -45,42 +49,14 @@ class CloudChaser(Serf):
 
     __CODE_SEND_WAIT = 1
 
-    class StatItem(object):
-        count = 0
-        size = 0
-        error = 0
-
-        def __init__(self, count, size, error):
-            self.count = count
-            self.size = size
-            self.error = error
-
-    class Stat(object):
-        recv = None
-        send = None
-
-        def __init__(self, recv, send):
-            self.recv = recv
-            self.send = send
-
-        @staticmethod
-        def build(data):
-            recv_count, recv_size, recv_error, data = struct.unpack("<III%is" % (len(data) - 12), data)
-            send_count, send_size, send_error, data = struct.unpack("<III%is" % (len(data) - 12), data)
-
-            return CloudChaser.Stat(
-                CloudChaser.StatItem(recv_count, recv_size, recv_error),
-                CloudChaser.StatItem(send_count, send_size, send_error)
-            ), data
-
     def __init__(self, stats=None, handler=None, evnt_handler=None, mac_handler=None, uart_handler=None):
         super(CloudChaser, self).__init__()
         
         self.stats = stats
-        self.handler = handler
-        self.evnt_handler = evnt_handler
-        self.mac_handler = mac_handler
-        self.uart_handler = uart_handler
+        self.handlers = [handler] if handler else []
+        self.evnt_handlers = [evnt_handler] if evnt_handler else []
+        self.mac_handlers = [mac_handler] if mac_handler else []
+        self.uart_handlers = [uart_handler] if uart_handler else []
 
         self.add(
             name='echo',
@@ -97,19 +73,30 @@ class CloudChaser(Serf):
         )
 
         def decode_status(data):
-            version, serial, uptime, macid, data = struct.unpack("<IQIH%is" % (len(data) - 18), data)
+            version, serial, uptime, addr, data = struct.unpack("<IQIH%is" % (len(data) - 18), data)
 
-            phy_stat, data = CloudChaser.Stat.build(data)
-            mac_stat, data = CloudChaser.Stat.build(data)
-            net_stat, data = CloudChaser.Stat.build(data)
+            def decode_status_set(dat):
+                recv_count, recv_size, recv_error, dat = struct.unpack("<III%is" % (len(dat) - 12), dat)
+                send_count, send_size, send_error, dat = struct.unpack("<III%is" % (len(dat) - 12), dat)
 
-            return version, serial, uptime, macid, phy_stat, mac_stat, net_stat
+                return AttrDict(
+                    recv=AttrDict(count=recv_count, size=recv_size, error=recv_error),
+                    send=AttrDict(count=send_count, size=send_size, error=send_error)
+                ), dat
+
+            phy_stat, data = decode_status_set(data)
+            mac_stat, data = decode_status_set(data)
+            net_stat, data = decode_status_set(data)
+
+            return [AttrDict(
+                version=version, serial=serial, uptime=uptime, addr=addr,
+                phy_stat=phy_stat, mac_stat=mac_stat, net_stat=net_stat
+            )]
 
         self.add(
             name='status',
             code=CloudChaser.CODE_ID_STATUS,
             decode=decode_status,
-            handle=self.handle_status,
             response=CloudChaser.CODE_ID_STATUS
         )
 
@@ -139,20 +126,36 @@ class CloudChaser(Serf):
             response=CloudChaser.CODE_ID_MAC_SEND
         )
 
+        def encode_send(addr, port, typ, data, wait=None):
+            if port & (~self.NET_PORT_MASK & 0xFFFF):
+                raise ValueError("port uses restricted bits")
+            if typ & (~self.NET_TYPE_MASK & 0xFFFF):
+                raise ValueError("typ uses restricted bits")
+
+            if wait is None:
+                return struct.pack(
+                    "<HHB%is" % len(data), addr & CloudChaser.NET_ADDR_MASK,
+                    port & CloudChaser.NET_PORT_MASK,
+                    typ & CloudChaser.NET_TYPE_MASK, data
+                )
+            else:
+                return struct.pack(
+                    "<HHBI%is" % len(data), addr & CloudChaser.NET_ADDR_MASK,
+                    port & CloudChaser.NET_PORT_MASK,
+                    typ & CloudChaser.NET_TYPE_MASK,
+                    wait & 0xFFFFFFFF, data
+                )
+
         self.add(
             name='send',
             code=CloudChaser.CODE_ID_SEND,
-            encode=lambda addr, port, typ, data: struct.pack(
-                "<HHB%is" % len(data), addr & 0xFFFF, port & 0xFFFF, typ & 0xFF, data
-            )
+            encode=lambda addr, port, typ, data: encode_send(addr, port, typ, data)
         )
 
         self.add(
             name='mesg',
             code=CloudChaser.CODE_ID_MESG,
-            encode=lambda addr, port, typ, data: struct.pack(
-                "<HHB%is" % len(data), addr & 0xFFFF, port & 0xFFFF, typ & 0xFF, data
-            ),
+            encode=lambda addr, port, typ, data: encode_send(addr, port, typ, data),
             decode=lambda data: struct.unpack("<H", data),
             response=CloudChaser.CODE_ID_MESG_SENT
         )
@@ -168,7 +171,7 @@ class CloudChaser(Serf):
         self.add(
             name='recv',
             code=CloudChaser.CODE_ID_RECV,
-            decode=lambda data: struct.unpack("<HHB%is" % (len(data) - 5), data),
+            decode=lambda data: struct.unpack("<HHHB%is" % (len(data) - 7), data),
             handle=self.handle_recv
         )
 
@@ -180,9 +183,7 @@ class CloudChaser(Serf):
         self.add(
             name='trxn',
             code=CloudChaser.CODE_ID_TRXN,
-            encode=lambda addr, port, typ, wait, data: struct.pack(
-                "<HHBI%is" % len(data), addr & 0xFFFF, port & 0xFFFF, typ & 0xFF, wait & 0xFFFFFFFF, data
-            ),
+            encode=lambda addr, port, typ, wait, data: encode_send(addr, port, typ, data, wait),
             decode=decode_trxn_stat,
             response=CloudChaser.CODE_ID_TRXN,
             multi=True
@@ -195,7 +196,7 @@ class CloudChaser(Serf):
 
             while len(data) >= 10:
                 addri, peer, last, rssi, lqi, data = struct.unpack("<HHIbB%is" % (len(data) - 10), data)
-
+                # TODO: This is a good place for collections.namedtuple
                 peers.append((addri, peer, last, rssi, lqi))
 
             return addr, now, peers
@@ -255,14 +256,13 @@ class CloudChaser(Serf):
         else:
             self.close()
 
-    def handle_status(self, version, serial, uptime, macid, phy_stat, mac_stat, net_stat):
-        print("Cloud Chaser {:016X}@{:04X} up={}s rx={}/{}/{} tx={}/{}/{}".format(
-            serial, macid, uptime // 1000,
-            net_stat.recv.count, net_stat.recv.size, net_stat.recv.error,
-            net_stat.send.count, net_stat.send.size, net_stat.send.error
-        ), file=sys.stderr)
-
-        return mac_stat, phy_stat
+    @staticmethod
+    def format_status(stat):
+        return "Cloud Chaser {:016X}@{:04X} up={}s rx={}/{}/{} tx={}/{}/{}".format(
+            stat.serial, stat.addr, stat.uptime // 1000,
+            stat.net_stat.recv.count, stat.net_stat.recv.size, stat.net_stat.recv.error,
+            stat.net_stat.send.count, stat.net_stat.send.size, stat.net_stat.send.error
+        )
 
     def handle_mac_recv(self, addr, peer, dest, size, rssi, lqi, data):
         if self.stats is not None:
@@ -276,10 +276,10 @@ class CloudChaser(Serf):
             self.stats.lqi_sum += lqi
             self.stats.unlock()
 
-        if self.mac_handler is not None:
-            self.mac_handler(self, addr, peer, dest, rssi, lqi, data)
+        for mac_handler in self.mac_handlers:
+            mac_handler(self, addr, peer, dest, rssi, lqi, data)
 
-    def handle_recv(self, addr, port, typ, data):
+    def handle_recv(self, addr, dest, port, typ, data):
         if self.stats is not None:
             self.stats.lock()
             if not self.stats.recv_count:
@@ -289,13 +289,13 @@ class CloudChaser(Serf):
             self.stats.recv_count += 1
             self.stats.unlock()
 
-        if self.handler is not None:
-            self.handler(self, addr, port, typ, data)
+        for handler in self.handlers:
+            handler(self, addr, dest, port, typ, data)
 
     def handle_evnt(self, event, data):
-        if self.evnt_handler is not None:
-            self.evnt_handler(self, event, data)
+        for evnt_handler in self.evnt_handlers:
+            evnt_handler(self, event, data)
 
     def handle_uart(self, data):
-        if self.uart_handler is not None:
-            self.uart_handler(self, data)
+        for uart_handler in self.uart_handlers:
+            uart_handler(self, data)
