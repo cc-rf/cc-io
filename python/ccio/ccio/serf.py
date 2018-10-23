@@ -10,7 +10,7 @@ import threading
 import traceback
 
 from . import cobs
-from .util import AttrDict
+from .util import adict
 
 
 class Serf(object):
@@ -20,7 +20,7 @@ class Serf(object):
     SERF_DECODE_ERROR   = (0, None)
 
     def __init__(self, write=None):
-        self.io = AttrDict()
+        self.io = adict()
         self.codes = {}
         self.serial = None
         self._sync = {}

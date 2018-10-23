@@ -11,7 +11,7 @@ import argcomplete
 import threading
 
 from . import util
-from .util import AttrDict
+from .util import adict
 from .cloudchaser import CloudChaser
 
 
@@ -150,7 +150,7 @@ class CCRF:
 
     def __handle_recv(self, cc, addr, dest, port, typ, data):
         if self.__recv_wait:
-            self.__recv_queue.append(AttrDict(
+            self.__recv_queue.append(adict(
                 addr=addr, dest=dest, port=port, type=typ, data=data
             ))
             self.__recv_sync.release()

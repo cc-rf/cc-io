@@ -9,7 +9,7 @@ import threading
 import traceback
 
 from .serf import Serf
-from .util import AttrDict
+from .util import adict
 
 
 class CloudChaser(Serf):
@@ -79,16 +79,16 @@ class CloudChaser(Serf):
                 recv_count, recv_size, recv_error, dat = struct.unpack("<III%is" % (len(dat) - 12), dat)
                 send_count, send_size, send_error, dat = struct.unpack("<III%is" % (len(dat) - 12), dat)
 
-                return AttrDict(
-                    recv=AttrDict(count=recv_count, size=recv_size, error=recv_error),
-                    send=AttrDict(count=send_count, size=send_size, error=send_error)
+                return adict(
+                    recv=adict(count=recv_count, size=recv_size, error=recv_error),
+                    send=adict(count=send_count, size=send_size, error=send_error)
                 ), dat
 
             phy_stat, data = decode_status_set(data)
             mac_stat, data = decode_status_set(data)
             net_stat, data = decode_status_set(data)
 
-            return [AttrDict(
+            return [adict(
                 version=version, serial=serial, uptime=uptime, addr=addr,
                 phy_stat=phy_stat, mac_stat=mac_stat, net_stat=net_stat
             )]
