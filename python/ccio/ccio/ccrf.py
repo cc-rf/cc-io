@@ -379,15 +379,19 @@ class CCRF:
         print(ccrf.format_status(stat), file=sys.stderr)
 
         if args.verbose:
-            print("mac: rx={}/{}/{} tx={}/{}/{}".format(
+            print("mac: rx={}/{}/{} tx={}/{}/{} stack: rx={} tx={}".format(
                 stat.mac_stat.recv.count, stat.mac_stat.recv.size, stat.mac_stat.recv.error,
-                stat.mac_stat.send.count, stat.mac_stat.send.size, stat.mac_stat.send.error
+                stat.mac_stat.send.count, stat.mac_stat.send.size, stat.mac_stat.send.error,
+                stat.mac_su_rx, stat.mac_su_tx
             ), file=sys.stderr)
 
-            print("phy: rx={}/{}/{} tx={}/{}/{}".format(
+            print("phy: rx={}/{}/{} tx={}/{}/{} stack: {}".format(
                 stat.phy_stat.recv.count, stat.phy_stat.recv.size, stat.phy_stat.recv.error,
-                stat.phy_stat.send.count, stat.phy_stat.send.size, stat.phy_stat.send.error
+                stat.phy_stat.send.count, stat.phy_stat.send.size, stat.phy_stat.send.error,
+                stat.phy_su
             ), file=sys.stderr)
+
+            print("heap: free={} usage={}".format(stat.heap_free, stat.heap_usage), file=sys.stderr)
 
     @staticmethod
     def _command_rainbow(ccrf, args):
