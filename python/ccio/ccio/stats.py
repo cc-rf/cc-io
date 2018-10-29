@@ -1,6 +1,5 @@
 """Cloud Chaser Support Library
 """
-
 import sys
 import time
 import threading
@@ -58,23 +57,23 @@ class Stats:
         diff = now - recv_time
 
         if diff:
-            d_rate = int(round(float(recv_size) / diff))
-            p_rate = int(round(float(recv_count) / diff))
+            d_rate = round(float(recv_size) / diff)
+            p_rate = round(float(recv_count) / diff)
         else:
             d_rate = 0
             p_rate = 0
 
         if recv_count:
-            rssi_avg = rssi_sum / recv_count
-            lqi_avg = lqi_sum / recv_count
+            rssi_avg = round(rssi_sum / recv_count)
+            lqi_avg = round(lqi_sum / recv_count)
         else:
             rssi_avg = 0
             lqi_avg = 0
 
         elapsed = int(round(now - self._start_time))
         elapsed -= elapsed % 5
-        elapsed_hour = elapsed / 3600
-        elapsed_min = (elapsed / 60) % 60
+        elapsed_hour = elapsed // 3600
+        elapsed_min = (elapsed // 60) % 60
         elapsed_sec = elapsed % 60
 
         print(

@@ -73,7 +73,7 @@ class CloudChaser(Serf):
         )
 
         def decode_status(data):
-            version, serial, uptime, addr, data = struct.unpack("<IQIH%is" % (len(data) - 18), data)
+            version, serial, uptime, addr, cell, rdid, data = struct.unpack("<IQIHBB%is" % (len(data) - 20), data)
 
             def decode_status_set(dat):
                 recv_count, recv_size, recv_error, dat = struct.unpack("<III%is" % (len(dat) - 12), dat)

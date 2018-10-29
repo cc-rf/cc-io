@@ -13,13 +13,14 @@ import threading
 from . import util
 from .util import adict
 from .cloudchaser import CloudChaser
-
+from .stats import Stats
 
 class CCRF:
     ADDR_BCST = CloudChaser.NET_ADDR_BCST
 
     device = None
     cc = None
+    stats = None
 
     __addr = None
 
@@ -28,11 +29,16 @@ class CCRF:
     __recv_wait = False
     __status_last = None
 
-    def __init__(self, device):
+    def __init__(self, device, stats=False):
         self.__recv_queue = []
         self.__recv_sync = threading.Semaphore(0)
         self.device = device
-        self.cc = CloudChaser(handler=self.__handle_recv)
+
+        if stats:
+            self.stats = Stats()
+            self.stats.start()
+
+        self.cc = CloudChaser(stats=self.stats, handler=self.__handle_recv)
         self.cc.open(device)
 
     def close(self):
