@@ -75,6 +75,16 @@ class CCRF:
             self.__load_status()
         return self.__addr
 
+    def echo(self, data):
+        """Echo data from the device.
+
+        :param data: Data to echo.
+        """
+        if isinstance(data, str):
+            data = bytes(data, 'ascii')
+
+        return self.cc.io.echo(data)
+
     def rainbow(self):
         """Flashes the onboard RGB LEDs in a rainbow pattern.
         """
@@ -173,16 +183,26 @@ class CCRF:
     def main():
         parser = argparse.ArgumentParser(prog="ccrf")
         CCRF.argparse_device_arg(parser)
-        parser.add_argument('-v', '--verbose', action='store_true', help='verbose output')
         subparsers = parser.add_subparsers(dest='command', title='commands', help='action to invoke', metavar='CMD')
 
         parser_status = subparsers.add_parser('status', aliases=['stat'], help='display status')
+        parser_status.add_argument('-v', '--verbose', action='store_true', help='verbose output')
         CCRF._command_stat = CCRF._command_status
+
+        parser_echo = subparsers.add_parser('echo', help='make the device echo back')
+        parser_echo.add_argument(
+            'data',
+            type=str,
+            default='-',
+            nargs='?',
+            help='data to echo or "-"/nothing for stdin'
+        )
 
         parser_rainbow = subparsers.add_parser('rainbow', aliases=['rbow'], help='display rainbow')
         CCRF._command_rbow = CCRF._command_rainbow
 
         parser_send = subparsers.add_parser('send', help='send a datagram')
+        parser_send.add_argument('-v', '--verbose', action='store_true', help='verbose output')
         parser_send.add_argument(
             '-d', '--dest',
             type=lambda p: int(p, 16),
@@ -219,6 +239,7 @@ class CCRF:
         )
 
         parser_recv = subparsers.add_parser('recv', help='receive data')
+        parser_recv.add_argument('-v', '--verbose', action='store_true', help='verbose output')
         parser_recv.add_argument(
             '-s', '--source',
             type=lambda p: int(p, 16),
@@ -279,6 +300,7 @@ class CCRF:
         )
 
         parser_rxtx = subparsers.add_parser('rxtx', help='send and receive data')
+        parser_rxtx.add_argument('-v', '--verbose', action='store_true', help='verbose output')
         parser_rxtx.add_argument(
             '-s', '--source',
             type=lambda p: int(p, 16),
@@ -392,6 +414,18 @@ class CCRF:
             ), file=sys.stderr)
 
             print("heap: free={} usage={}".format(stat.heap_free, stat.heap_usage), file=sys.stderr)
+
+    @staticmethod
+    def _command_echo(ccrf, args):
+
+        if args.data == '-':
+            while sys.stdin.readable():
+                ccrf.echo(sys.stdin.read())
+
+        else:
+            ccrf.echo(args.data)
+
+        time.sleep(0.001)
 
     @staticmethod
     def _command_rainbow(ccrf, args):
