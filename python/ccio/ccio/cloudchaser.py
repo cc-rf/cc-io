@@ -18,7 +18,6 @@ class CloudChaser(Serf):
     CODE_ID_MAC_SEND = 2
     CODE_ID_MAC_RECV = 3
     CODE_ID_SEND = 4
-    CODE_ID_MESG = 5
     CODE_ID_MESG_SENT = 5
     CODE_ID_RECV = 6
     CODE_ID_TRXN = 7
@@ -37,8 +36,8 @@ class CloudChaser(Serf):
     NET_ADDR_BCST = 0
     NET_ADDR_MASK = 0xFFFF
 
-    NET_PORT_MASK = 0b1111111111
-    NET_TYPE_MASK = 0b1111
+    NET_PORT_MASK = 0b1111111111  # 0x3FF, 1023
+    NET_TYPE_MASK = 0b1111  # 0xF, 15
 
     RESET_MAGIC = 0xD1E00D1E
 
@@ -48,6 +47,8 @@ class CloudChaser(Serf):
     NMAC_SEND_STRM = 3
 
     __CODE_SEND_WAIT = 1
+
+    NMAC_FLAG_MASK = ~__CODE_SEND_WAIT & 0xFF
 
     def __init__(self, stats=None, handler=None, evnt_handler=None, mac_handler=None, uart_handler=None):
         super(CloudChaser, self).__init__()
@@ -114,7 +115,7 @@ class CloudChaser(Serf):
             name='mac_send',
             code=CloudChaser.CODE_ID_MAC_SEND,
             encode=lambda typ, dest, data, flag=0, addr=0: struct.pack(
-                f"<BBHHH{len(data)}s", typ & 0xFF, (flag & ~CloudChaser.__CODE_SEND_WAIT) & 0xFF, addr & 0xFFFF, dest & 0xFFFF, len(data), data
+                f"<BBHHH{len(data)}s", typ & 0xFF, (flag & CloudChaser.NMAC_FLAG_MASK) & 0xFF, addr & 0xFFFF, dest & 0xFFFF, len(data), data
             )
         )
 
@@ -122,24 +123,26 @@ class CloudChaser(Serf):
             name='mac_send_wait',
             code=CloudChaser.CODE_ID_MAC_SEND,
             encode=lambda typ, dest, data, flag=0, addr=0: struct.pack(
-                f"<BBHHH{len(data)}s" , typ & 0xFF, (flag | CloudChaser.__CODE_SEND_WAIT) & 0xFF, addr & 0xFFFF,
+                f"<BBHHH{len(data)}s", typ & 0xFF, (flag | CloudChaser.__CODE_SEND_WAIT) & 0xFF, addr & 0xFFFF,
                 dest & 0xFFFF, len(data), data
             ),
             decode=lambda data: struct.unpack("<HI", data),
             response=CloudChaser.CODE_ID_MAC_SEND
         )
 
-        def encode_send(addr, port, typ, data, wait=None):
-            if port & (~self.NET_PORT_MASK & 0xFFFF):
+        def encode_send(addr, port, typ, data, mesg=False, wait=None):
+            if (port & self.NET_PORT_MASK) != port:
                 raise ValueError("port uses restricted bits")
-            if typ & (~self.NET_TYPE_MASK & 0xFFFF):
+            if (typ & self.NET_PORT_MASK) != typ:
                 raise ValueError("typ uses restricted bits")
 
             if wait is None:
                 return struct.pack(
-                    f"<HHB{len(data)}s", addr & CloudChaser.NET_ADDR_MASK,
+                    f"<HHBB{len(data)}s", addr & CloudChaser.NET_ADDR_MASK,
                     port & CloudChaser.NET_PORT_MASK,
-                    typ & CloudChaser.NET_TYPE_MASK, data
+                    typ & CloudChaser.NET_TYPE_MASK,
+                    int(mesg) & 0xFF,
+                    data
                 )
             else:
                 return struct.pack(
@@ -152,13 +155,13 @@ class CloudChaser(Serf):
         self.add(
             name='send',
             code=CloudChaser.CODE_ID_SEND,
-            encode=lambda addr, port, typ, data: encode_send(addr, port, typ, data)
+            encode=lambda addr, port, typ, data: encode_send(addr, port, typ, data, False),
         )
 
         self.add(
             name='mesg',
-            code=CloudChaser.CODE_ID_MESG,
-            encode=lambda addr, port, typ, data: encode_send(addr, port, typ, data),
+            code=CloudChaser.CODE_ID_SEND,
+            encode=lambda addr, port, typ, data: encode_send(addr, port, typ, data, True),
             decode=lambda data: struct.unpack("<H", data),
             response=CloudChaser.CODE_ID_MESG_SENT
         )
@@ -186,7 +189,7 @@ class CloudChaser(Serf):
         self.add(
             name='trxn',
             code=CloudChaser.CODE_ID_TRXN,
-            encode=lambda addr, port, typ, wait, data: encode_send(addr, port, typ, data, wait),
+            encode=lambda addr, port, typ, wait, data: encode_send(addr, port, typ, data, True, wait),
             decode=decode_trxn_stat,
             response=CloudChaser.CODE_ID_TRXN,
             multi=True

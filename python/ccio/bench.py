@@ -11,19 +11,25 @@ from ccio.ccrf import CCRF
 
 
 def run(args):
-    ccrf = CCRF(args.device, stats=True)
+    ccrf = CCRF(args.device, stats=sys.stderr)
 
     ccrf.print_status()
 
     if args.receiver:
-        for mesg in ccrf.recv(port=102):
+        # for mesg in ccrf.recv(port=102, typ=1):
+        #     ccrf.resp(mesg.addr, mesg.port, mesg.type)
+
+        for mesg in ccrf.recv_mac():
             pass
 
     else:
-        data = b'a' * 113
+        data = b'a' * 1024
+
+        # while 1:
+        #     list(ccrf.trxn(0x4BD3, port=102, typ=1, wait=100, data=data))
 
         while 1:
-            ccrf.mesg(0x4bc9, port=102, typ=1, data=data)
+            ccrf.mesg(0x4BC9, 0, 0, data)
 
 
 def main():

@@ -16,7 +16,10 @@ class Stats:
     _start_time = 0
     _lock = None
 
-    def __init__(self):
+    file = None
+
+    def __init__(self, file):
+        self.file = file
         self._lock = threading.Lock()
 
     def start(self):
@@ -79,7 +82,7 @@ class Stats:
         print(
             "{:02d}:{:02d}:{:02d}  {:5d} Bps / {:3d} pps \t rssi {:<4d}  lqi {:<2d}".format(
                 elapsed_hour, elapsed_min, elapsed_sec, d_rate, p_rate, rssi_avg, lqi_avg
-            )
+            ), file=self.file
         )
 
         # TODO: Maybe also add totals to this output ^

@@ -1,8 +1,5 @@
 """Serial Framed RF Device Communication Protocol
 """
-from __future__ import print_function
-import os
-import random
 import sys
 import struct
 import time

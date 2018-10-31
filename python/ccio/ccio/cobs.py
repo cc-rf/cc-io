@@ -11,6 +11,11 @@ This is based on the C implementation of COBS by Jacques Fortier.
 
 
 def cobs_encode(data):
+    """COBS-Encode bytes.
+
+    :param data: input bytes
+    :return: cobs-encoded bytearray
+    """
     read_index = 0
     write_index = 1
     code_index = 0
@@ -42,11 +47,11 @@ def cobs_encode(data):
     return output[:write_index]
 
 
-# Decodes a list or tuple of bytes (data) from COBS
-# Returns a tuple containing the length of the decoded data
-# and a list containing the data, or (0,[]) if the data
-# is invalid
 def cobs_decode(data):
+    """Decode a byte array.
+    :param data: input bytes
+    :return: length, decoded
+    """
     read_index = 0
     write_index = 0
     code = 0
@@ -69,4 +74,3 @@ def cobs_decode(data):
             write_index += 1
 
     return output[:write_index]
-

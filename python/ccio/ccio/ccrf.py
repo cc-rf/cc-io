@@ -9,14 +9,22 @@ import time
 import argparse
 import argcomplete
 import threading
+import subprocess
 
 from . import util
 from .util import adict
 from .cloudchaser import CloudChaser
 from .stats import Stats
 
+
 class CCRF:
     ADDR_BCST = CloudChaser.NET_ADDR_BCST
+
+    MAC_FLAG_MASK = CloudChaser.NMAC_FLAG_MASK
+
+    MAC_DGRM = CloudChaser.NMAC_SEND_DGRM
+    MAC_MESG = CloudChaser.NMAC_SEND_MESG
+    MAC_STRM = CloudChaser.NMAC_SEND_STRM
 
     device = None
     cc = None
@@ -27,18 +35,30 @@ class CCRF:
     __recv_queue = []
     __recv_sync = None
     __recv_wait = False
+    __recv_mac_queue = []
+    __recv_mac_sync = None
+    __recv_mac_wait = False
+
     __status_last = None
 
-    def __init__(self, device, stats=False):
+    def __init__(self, device, stats=None):
         self.__recv_queue = []
         self.__recv_sync = threading.Semaphore(0)
+        self.__recv_mac_queue = []
+        self.__recv_mac_sync = threading.Semaphore(0)
+
         self.device = device
 
         if stats:
-            self.stats = Stats()
+            self.stats = Stats(stats)
             self.stats.start()
 
-        self.cc = CloudChaser(stats=self.stats, handler=self.__handle_recv)
+        self.cc = CloudChaser(
+            stats=self.stats,
+            handler=self.__handle_recv,
+            mac_handler=self.__handle_recv_mac
+        )
+
         self.cc.open(device)
 
     def close(self):
@@ -100,6 +120,21 @@ class CCRF:
         """
         return self.cc.io.send(addr, port, typ, data)
 
+    def send_mac(self, typ, dest, data, flag=0, addr=0, wait=True):
+        """Send a MAC-layer datagram.
+
+        :param typ: MAC message type: CCRF.MAC_DGRM, CCRF.MAC_MESG, or CCRF.MAC_STRM.
+        :param dest: Destination node address.
+        :param data: Data to send.
+        :param flag: Message flag bits (see: CCRF.MAC_FLAG_MASK).
+        :param addr: Source address (0 for default).
+        :param wait: Wait until TX complete to return.
+        """
+        if wait:
+            return self.cc.io.mac_send_wait(typ, dest, data, flag, addr)
+
+        return self.cc.io.mac_send(typ, dest, data, flag, addr)
+
     def mesg(self, addr, port, typ, data=b''):
         """Send a message and await ACK.
 
@@ -110,19 +145,22 @@ class CCRF:
         """
         return self.cc.io.mesg(addr, port, typ, data)
 
-    def recv(self, port=None, typ=None, once=False):
+    def recv(self, port=None, typ=None, once=False, timeout=None):
         """Receive messages (iterator).
 
         :param port: filter by port.
         :param typ: filter by type.
         :param once: finish receiving after one message.
+        :param timeout: timeout in seconds or None.
         :return: iterator that receives once or forever.
         """
         self.__recv_wait = True
 
         try:
             while 1:
-                self.__recv_sync.acquire()
+                if not self.__recv_sync.acquire(timeout=timeout):
+                    break
+
                 mesg = self.__recv_queue.pop(0)
 
                 if port is not None and mesg.port != port:
@@ -139,6 +177,28 @@ class CCRF:
         finally:
             self.__recv_wait = False
 
+    def recv_mac(self, once=False, timeout=None):
+        """Receive MAC messages (iterator).
+
+        :param once: finish receiving after one message.
+        :param timeout: timeout in seconds or None.
+        :return: iterator that receives once or forever.
+        """
+        self.__recv_mac_wait = True
+
+        try:
+            while 1:
+                self.__recv_mac_sync.acquire(timeout=timeout)
+                mesg = self.__recv_mac_queue.pop(0)
+
+                yield mesg
+
+                if once:
+                    break
+
+        finally:
+            self.__recv_mac_wait = False
+
     def trxn(self, addr, port, typ, wait, data=b''):
         """Transact data with a peer.
 
@@ -148,7 +208,7 @@ class CCRF:
         :param addr: address to transact with, can be broadcast.
         :param port: destination port.
         :param typ: destination type id.
-        :param wait: wait time in ms, must be nonzero and < (2^32)-1
+        :param wait: wait time in ms, must be nonzero and < 2^32.
         :param data: transaction request data.
         :return: list of transaction responses (addr, data).
         """
@@ -170,6 +230,13 @@ class CCRF:
                 addr=addr, dest=dest, port=port, type=typ, data=data
             ))
             self.__recv_sync.release()
+
+    def __handle_recv_mac(self, cc, addr, peer, dest, rssi, lqi, data):
+        if self.__recv_mac_wait:
+            self.__recv_mac_queue.append(adict(
+                addr=addr, peer=peer, dest=dest, rssi=rssi, lqi=lqi, data=data
+            ))
+            self.__recv_mac_sync.release()
 
     @staticmethod
     def argparse_device_arg(parser):
@@ -211,9 +278,9 @@ class CCRF:
         )
         parser_send.add_argument(
             '-p', '--path',
-            type=lambda p: [int(pi, 16) for pi in p.split(',', 1)],
+            type=lambda p: [int(pi) for pi in p.split(',', 1)],
             default=(0, 0),
-            help='destination route (port, type) (hex, default=0,0)'
+            help='source route (port: 0-1023, type: 0-15) (int, default=0,0)'
         )
         parser_send.add_argument(
             '-m', '--mesg',
@@ -228,7 +295,7 @@ class CCRF:
         )
         parser_send.add_argument(
             '-i', '--input',
-            help='file to send data from (default: stdout or cmdline)'
+            help='file to send data from (default: stdin or cmdline)'
         )
         parser_send.add_argument(
             'data',
@@ -248,9 +315,9 @@ class CCRF:
         )
         parser_recv.add_argument(
             '-p', '--path',
-            type=lambda p: [int(pi, 16) for pi in p.split(',', 1)],
+            type=lambda p: [int(pi) for pi in p.split(',', 1)],
             default=(0, 0),
-            help='source route (port, type) (hex, default=0,0)'
+            help='source route (port: 0-1023, type: 0-15) (int, default=0,0)'
         )
         parser_recv.add_argument(
             '-b', '--bcast',
@@ -265,7 +332,18 @@ class CCRF:
         parser_recv.add_argument(
             '-1', '--once',
             action="store_true",
-            help='exit after receiving one message'
+            help='exit after receiving one message (unless -T)'
+        )
+        parser_recv.add_argument(
+            '-t', '--timeout',
+            type=float,
+            default=None,
+            help='amount of time in seconds to receive'
+        )
+        parser_recv.add_argument(
+            '-T', '--timeout-after-first',
+            action="store_true",
+            help='start timeout clock after first receive'
         )
         parser_recv.add_argument(
             '-n', '--newline',
@@ -315,15 +393,15 @@ class CCRF:
         )
         parser_rxtx.add_argument(
             '-p', '--path',
-            type=lambda p: [int(pi, 16) for pi in p.split(',', 1)],
+            type=lambda p: [int(pi) for pi in p.split(',', 1)],
             default=(0, 0),
-            help='source route (port, type) (hex, default=0,0)'
+            help='source route (port: 0-1023, type: 0-15) (int, default=0,0)'
         )
         parser_rxtx.add_argument(
             '-P', '--path-dest',
-            type=lambda p: [int(pi, 16) for pi in p.split(',', 1)],
+            type=lambda p: [int(pi) for pi in p.split(',', 1)],
             default=None,
-            help='destination route (port, type) (hex, default=path)'
+            help='destination route (port: 0-1023, type: 0-15) (int, default=path)'
         )
         parser_rxtx.add_argument(
             '-m', '--mesg',
@@ -344,6 +422,17 @@ class CCRF:
             '-1', '--once',
             action="store_true",
             help='exit after receiving one message'
+        )
+        parser_rxtx.add_argument(
+            '-t', '--timeout',
+            type=float,
+            default=None,
+            help='amount of time in seconds to receive'
+        )
+        parser_rxtx.add_argument(
+            '-T', '--timeout-after-first',
+            action="store_true",
+            help='start timeout clock after first receive (unless -T)'
         )
         parser_rxtx.add_argument(
             '-n', '--newline',
@@ -379,8 +468,23 @@ class CCRF:
             action="store_true",
             help='flush output on each receive'
         )
+        parser_rxtx.add_argument(
+            '-e', '--exec',
+            type=lambda p: p.split(),
+            help='execute program and pipe stdin/stdout over rf'
+        )
+        parser_rxtx.add_argument(
+            '-ei', '--exec-in',
+            type=lambda p: p.split(),
+            help='execute program and pipe stdout over rf'
+        )
+        parser_rxtx.add_argument(
+            '-eo', '--exec-out',
+            type=lambda p: p.split(),
+            help='execute program and pipe to stdin from rf'
+        )
 
-        parser_monitor = subparsers.add_parser('monitor', help='monitor i/o stats')
+        # parser_monitor = subparsers.add_parser('monitor', help='monitor i/o stats')
 
         argcomplete.autocomplete(parser)
         args = parser.parse_args()
@@ -435,7 +539,7 @@ class CCRF:
     @staticmethod
     def __print_mesg(addr, dest, port, typ, data):
         print(
-            f"{addr:04X}->{dest:04X} {port:02X}:{typ:02X} #{len(data)}",
+            f"{addr:04X}->{dest:04X} {port:03X}:{typ:01X} #{len(data)}",
             file=sys.stderr
         )
 
@@ -457,7 +561,10 @@ class CCRF:
             inf = sys.stdin
 
             if args.input:
-                inf = open(args.input, 'rb')
+                if isinstance(args.input, str):
+                    inf = open(args.input, 'rb')
+                else:
+                    inf = args.input
 
             try:
                 while inf.readable():
@@ -488,44 +595,65 @@ class CCRF:
         out = sys.stdout
 
         if args.out:
-            out = open(args.out, 'w+b' if args.append else 'wb')
+            if isinstance(args.out, str):
+                out = open(args.out, 'w+b' if args.append else 'wb')
+            else:
+                out = args.out
 
         try:
-            for mesg in ccrf.recv(port=args.path[0], typ=args.path[1]):
-                if mesg.dest == CloudChaser.NET_ADDR_BCST:
-                    if args.no_bcast:
+            last = 0
+
+            while 1:
+                for mesg in ccrf.recv(port=args.path[0], typ=args.path[1], timeout=args.timeout):
+                    last = time.time()
+
+                    if mesg.dest == CloudChaser.NET_ADDR_BCST:
+                        if args.no_bcast:
+                            continue
+                    elif args.bcast or mesg.dest != ccrf.addr():
                         continue
-                elif args.bcast or mesg.dest != ccrf.addr():
-                    continue
 
-                if args.source and mesg.addr != args.source:
-                    continue
+                    if args.source and mesg.addr != args.source:
+                        continue
 
-                if out is sys.stdout:
-                    out.write(
-                        str(mesg.data, 'ascii') +
-                        (os.linesep if args.mesg_newline else '')
-                    )
-                else:
-                    out.write(mesg.data)
+                    if out is sys.stdout:
+                        out.write(
+                            str(mesg.data, 'ascii') +
+                            (os.linesep if args.mesg_newline else '')
+                        )
+                    else:
+                        out.write(mesg.data)
 
-                if args.flush:
-                    out.flush()
-
-                if args.verbose:
-                    CCRF.__print_mesg(mesg.addr, mesg.dest, mesg.port, mesg.type, mesg.data)
-
-                if args.respond:
-                    if not args.flush:
+                    if args.flush:
                         out.flush()
 
-                    data = bytes(sys.stdin.read(), 'ascii')
+                    if args.verbose:
+                        CCRF.__print_mesg(mesg.addr, mesg.dest, mesg.port, mesg.type, mesg.data)
 
-                    if data:
-                        ccrf.mesg(mesg.addr, mesg.port, mesg.type, data)
+                    if args.respond:
+                        if not args.flush:
+                            out.flush()
 
-                if args.once:
+                        data = bytes(sys.stdin.read(), 'ascii')
+
+                        if data:
+                            ccrf.mesg(mesg.addr, mesg.port, mesg.type, data)
+
+                    if args.once or args.timeout_after_first:
+                        break
+
+                if not args.timeout:
                     break
+
+                if args.timeout_after_first:
+                    if not last:
+                        continue
+
+                    since = time.time() - last
+
+                    if since >= args.timeout:
+                        break
+
         finally:
             if out is sys.stdout and args.newline:
                 out.write(os.linesep)
@@ -542,6 +670,39 @@ class CCRF:
 
         if args.path_dest is None:
             args.path_dest = args.path
+
+        if args.exec:
+            if args.input or args.out:
+                raise ValueError("cannot specify input or output files when using pipe")
+
+            sp = subprocess.Popen(
+                args=args.exec, executable=args.exec[0],
+                stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                stderr=sys.stderr
+            )
+
+            args.input = sp.stdout
+            args.out = sp.stdin
+        else:
+            if args.input:
+                raise ValueError("cannot specify input files when using input pipe")
+
+            if args.exec_in:
+                spi = subprocess.Popen(
+                    args=args.exec_in, executable=args.exec_in[0],
+                    stdout=subprocess.PIPE, stderr=sys.stderr
+                )
+
+                args.input = spi.stdout
+
+            if args.exec_out:
+                spi = subprocess.Popen(
+                    args=args.exec_out, executable=args.exec_out[0],
+                    stdin=subprocess.PIPE, stdout=sys.stdout,
+                    stderr=sys.stderr
+                )
+
+                args.out = spi.stdin
 
         threading.Thread(
             target=lambda: CCRF._command_send(ccrf, args, rxtx=True),
