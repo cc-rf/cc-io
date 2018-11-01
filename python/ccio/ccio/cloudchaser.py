@@ -114,8 +114,8 @@ class CloudChaser(Serf):
         self.add(
             name='mac_send',
             code=CloudChaser.CODE_ID_MAC_SEND,
-            encode=lambda typ, dest, data, flag=0, addr=0: struct.pack(
-                f"<BBHHH{len(data)}s", typ & 0xFF, (flag & CloudChaser.NMAC_FLAG_MASK) & 0xFF, addr & 0xFFFF, dest & 0xFFFF, len(data), data
+            encode=lambda typ, dest, data, addr=0: struct.pack(
+                f"<BBHHH{len(data)}s", typ & 0xFF, ~CloudChaser.__CODE_SEND_WAIT & 0xFF, addr & 0xFFFF, dest & 0xFFFF, len(data), data
             )
         )
 
@@ -123,7 +123,7 @@ class CloudChaser(Serf):
             name='mac_send_wait',
             code=CloudChaser.CODE_ID_MAC_SEND,
             encode=lambda typ, dest, data, flag=0, addr=0: struct.pack(
-                f"<BBHHH{len(data)}s", typ & 0xFF, (flag | CloudChaser.__CODE_SEND_WAIT) & 0xFF, addr & 0xFFFF,
+                f"<BBHHH{len(data)}s", typ & 0xFF, CloudChaser.__CODE_SEND_WAIT & 0xFF, addr & 0xFFFF,
                 dest & 0xFFFF, len(data), data
             ),
             decode=lambda data: struct.unpack("<HI", data),

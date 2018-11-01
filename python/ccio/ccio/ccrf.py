@@ -125,20 +125,19 @@ class CCRF:
         else:
             return self.cc.io.resp(addr, port, typ, data, mesg=False)
 
-    def send_mac(self, typ, dest, data, flag=0, addr=0, wait=True):
+    def send_mac(self, typ, dest, data, addr=0, wait=True):
         """Send a MAC-layer datagram.
 
         :param typ: MAC message type: CCRF.MAC_DGRM, CCRF.MAC_MESG, or CCRF.MAC_STRM.
         :param dest: Destination node address.
         :param data: Data to send.
-        :param flag: Message flag bits (see: CCRF.MAC_FLAG_MASK).
         :param addr: Source address (0 for default).
         :param wait: Wait until TX complete to return.
         """
         if wait:
-            return self.cc.io.mac_send_wait(typ, dest, data, flag, addr)
+            return self.cc.io.mac_send_wait(typ, dest, data, addr)
 
-        return self.cc.io.mac_send(typ, dest, data, flag, addr)
+        return self.cc.io.mac_send(typ, dest, data, addr)
 
     def mesg(self, addr, port, typ, data=b''):
         """Send a message and await ACK.
