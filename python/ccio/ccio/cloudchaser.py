@@ -18,7 +18,7 @@ class CloudChaser(Serf):
     CODE_ID_MAC_SEND = 2
     CODE_ID_MAC_RECV = 3
     CODE_ID_SEND = 4
-    CODE_ID_MESG_SENT = 5
+    CODE_ID_SEND_DONE = 5
     CODE_ID_RECV = 6
     CODE_ID_TRXN = 7
     CODE_ID_RESP = 8
@@ -155,23 +155,17 @@ class CloudChaser(Serf):
         self.add(
             name='send',
             code=CloudChaser.CODE_ID_SEND,
-            encode=lambda addr, port, typ, data: encode_send(addr, port, typ, data, False),
+            encode=lambda addr, port, typ, data, mesg=False: encode_send(addr, port, typ, data, mesg),
+            decode=lambda data: struct.unpack("<H", data),
+            response=CloudChaser.CODE_ID_SEND_DONE
         )
 
-        self.add(
-            name='mesg',
-            code=CloudChaser.CODE_ID_SEND,
-            encode=lambda addr, port, typ, data: encode_send(addr, port, typ, data, True),
-            decode=lambda data: struct.unpack("<H", data),
-            response=CloudChaser.CODE_ID_MESG_SENT
-        )
+        self.io.mesg = lambda *a, **k: self.io.send(*a, **k, mesg=True)
 
         self.add(
             name='resp',
             code=CloudChaser.CODE_ID_RESP,
-            encode=lambda addr, port, typ, data: struct.pack(
-                f"<HHB{len(data)}s", addr & 0xFFFF, port & 0xFFFF, typ & 0xFF, data
-            )
+            encode=lambda addr, port, typ, data, mesg=True: encode_send(addr, port, typ, data, mesg)
         )
 
         self.add(

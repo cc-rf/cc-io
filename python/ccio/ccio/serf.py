@@ -240,7 +240,7 @@ class WaitSync(object):
     result = []
     handle = None
     writer = None
-    done = False
+    done = True
 
     def __init__(self, handle, writer, multi):
         self.sem = threading.Semaphore(0)
@@ -255,6 +255,10 @@ class WaitSync(object):
             self.write_wait = self.write_wait_normal
 
     def process(self, data):
+        if self.done:
+            print("serf: ignoring unsolicited response", file=sys.stderr)
+            return
+
         if data is not None:
             if not self.multi:
                 self.result = data

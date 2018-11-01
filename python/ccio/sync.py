@@ -24,14 +24,14 @@ def run(args):
                 now = time.time()
                 print(f"{now:.6f}")
             elif mesg.type == 0:
-                ccrf.send(mesg.addr, mesg.port, mesg.type)
+                ccrf.send(mesg.addr, mesg.port, mesg.type, wait=False)
 
     else:
         all_latency = []
 
         for _ in range(3):
             latency = time.time()
-            ccrf.send(CCRF.ADDR_BCST, port=101, typ=0)
+            ccrf.send(CCRF.ADDR_BCST, port=101, typ=0, wait=False)
             resp = next(ccrf.recv(port=101, typ=0, once=True))
             latency = time.time() - latency
             all_latency.append(latency)
@@ -42,7 +42,7 @@ def run(args):
         latency *= 0.65
 
         while 1:
-            ccrf.send(CCRF.ADDR_BCST, port=101, typ=1)
+            ccrf.send(CCRF.ADDR_BCST, port=101, typ=1, wait=False)
             time.sleep(latency)
             now = time.time()
             print(f"{now:.6f}")
