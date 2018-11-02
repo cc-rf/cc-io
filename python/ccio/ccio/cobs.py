@@ -5,11 +5,9 @@ def cobs_encode(data):
     :param data: input bytes
     :return: cobs-encoded bytearray
     """
-    ri = 0
-    wi = 1
-    ci = 0
-    c = 1
     out = bytearray(len(data) + 1 + (len(data) // 254))
+    ci = ri = 0
+    c = wi = 1
 
     while ri < len(data):
         if not data[ri]:
@@ -38,9 +36,8 @@ def cobs_decode(data):
     :param data: input bytes
     :return: length, decoded
     """
-    ri = 0
-    wi = 0
     out = bytearray(len(data))
+    ri = wi = 0
 
     while ri < len(data):
         c = data[ri]
