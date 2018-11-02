@@ -228,6 +228,15 @@ class CCRF:
         """
         return self.cc.io.resp(addr, port, typ, data)
 
+    def peers(self):
+        """Get the peer table from the device.
+
+        Includes all advertised known peer associations.
+
+        :return: adict{node, time, peers=adict{node, peer, last, rssi, lqi}}.
+        """
+        return self.cc.io.peer()
+
     def __handle_recv(self, cc, addr, dest, port, typ, data):
         if self.__recv_wait:
             self.__recv_queue.append(adict(
@@ -271,6 +280,8 @@ class CCRF:
 
         parser_rainbow = subparsers.add_parser('rainbow', aliases=['rbow'], help='display rainbow')
         CCRF._command_rbow = CCRF._command_rainbow
+
+        parser_peer = subparsers.add_parser('peer', help='print peer table')
 
         parser_send = subparsers.add_parser('send', help='send a datagram')
         parser_send.add_argument('-v', '--verbose', action='store_true', help='verbose output')
@@ -539,6 +550,18 @@ class CCRF:
     def _command_rainbow(ccrf, args):
         ccrf.rainbow()
         time.sleep(0.1)
+
+    @staticmethod
+    def _command_peer(ccrf, args):
+        peer_info = ccrf.peers()
+
+        print(f"     {peer_info.node:04X}: t={peer_info.time}", file=sys.stderr)
+
+        for peer in peer_info.peers:
+            print(
+                f"{peer.node:04X}/{peer.peer:04X}: t={peer.last} q={peer.lqi} r={peer.rssi}",
+                file=sys.stderr
+            )
 
     @staticmethod
     def __print_mesg(addr, dest, port, typ, data):

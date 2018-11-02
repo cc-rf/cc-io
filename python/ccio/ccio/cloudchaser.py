@@ -197,9 +197,9 @@ class CloudChaser(Serf):
             while len(data) >= 10:
                 addri, peer, last, rssi, lqi, data = struct.unpack(f"<HHIbB{len(data) - 10}s", data)
                 # TODO: This is a good place for collections.namedtuple
-                peers.append((addri, peer, last, rssi, lqi))
+                peers.append(adict(node=addri, peer=peer, last=last, rssi=rssi, lqi=lqi))
 
-            return addr, now, peers
+            return [adict(node=addr, time=now, peers=peers)]
 
         self.add(
             name='peer',
