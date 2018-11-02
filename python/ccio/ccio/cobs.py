@@ -1,50 +1,36 @@
-"""Consistent Overhead Byte Stuffing
-
-https://github.com/Jeff-Ciesielski/pycobs/blob/master/cobs.py
-
-Copyright 2013, Jeff Ciesielski <jeffciesielski@gmail.com>
-Redistribution and use in source and binary forms are permitted,
-with or without modification.
-
-This is based on the C implementation of COBS by Jacques Fortier.
-"""
 
 
 def cobs_encode(data):
     """COBS-Encode bytes.
-
     :param data: input bytes
     :return: cobs-encoded bytearray
     """
-    read_index = 0
-    write_index = 1
-    code_index = 0
-    code = 1
-    output = bytearray(len(data) + 1 + (len(data) // 254))
+    ri = 0
+    wi = 1
+    ci = 0
+    c = 1
+    out = bytearray(len(data) + 1 + (len(data) // 254))
 
-    while read_index < len(data):
-        if not data[read_index]:
-            output[code_index] = code
-            code = 1
-            code_index = write_index
-            write_index += 1
-            read_index += 1
-
+    while ri < len(data):
+        if not data[ri]:
+            out[ci] = c
+            c = 1
+            ci = wi
+            wi += 1
+            ri += 1
         else:
-            output[write_index] = data[read_index]
-            read_index += 1
-            write_index += 1
-            code += 1
+            out[wi] = data[ri]
+            ri += 1
+            wi += 1
+            c += 1
+            if c == 0xFF:
+                out[ci] = c
+                c = 1
+                ci = wi
+                wi += 1
+    out[ci] = c
 
-            if code == 0xff:
-                output[code_index] = code
-                code = 1
-                code_index = write_index
-                write_index += 1
-
-    output[code_index] = code
-
-    return output[:write_index]
+    return out[:wi]
 
 
 def cobs_decode(data):
@@ -52,25 +38,21 @@ def cobs_decode(data):
     :param data: input bytes
     :return: length, decoded
     """
-    read_index = 0
-    write_index = 0
-    code = 0
-    output = bytearray(len(data))
+    ri = 0
+    wi = 0
+    out = bytearray(len(data))
 
-    while read_index < len(data):
-        code = data[read_index]
-        if (read_index + code) > len(data) and code != 1:
-            return b''
+    while ri < len(data):
+        c = data[ri]
+        if (ri + c) > len(data) and c != 1:
+            return bytearray()
+        ri += 1
+        for i in range(c - 1):
+            out[wi] = data[ri]
+            wi += 1
+            ri += 1
+        if c != 0xFF and ri != len(data):
+            out[wi] = 0
+            wi += 1
 
-        read_index += 1
-
-        for i in range(code - 1):
-            output[write_index] = data[read_index]
-            write_index += 1
-            read_index += 1
-
-        if code != 0xff and read_index != len(data):
-            output[write_index] = 0
-            write_index += 1
-
-    return output[:write_index]
+    return out[:wi]
