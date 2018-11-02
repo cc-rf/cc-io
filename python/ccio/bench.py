@@ -16,14 +16,15 @@ def run(args):
     ccrf.print_status()
 
     if args.receiver:
-        for mesg in ccrf.recv(port=102, typ=1):
+        for mesg in ccrf.recv(port=101, typ=1):
             pass
 
     else:
-        data = b'a' * 113
+        data = b'a' * 1130
 
         while 1:
-            ccrf.send(0x4BC9, port=102, typ=1, data=data)
+            # ccrf.send_mac(CCRF.MAC_STRM, 0x4BC9, data=data, wait=True)
+            ccrf.mesg(0x4BD3, port=101, typ=1, data=data)
 
 
 def main():
