@@ -33,6 +33,8 @@ class CloudChaser(Serf):
     NET_EVNT_PEER_SET = 0
     NET_EVNT_PEER_EXP = 1
 
+    NET_BASE_SIZE = 113
+
     NET_ADDR_BCST = 0
     NET_ADDR_MASK = 0xFFFF
 
@@ -46,9 +48,12 @@ class CloudChaser(Serf):
     NMAC_SEND_TRXN = 2
     NMAC_SEND_STRM = 3
 
-    __CODE_SEND_WAIT = 1
+    __CODE_SEND_MESG = 0b01
+    __CODE_SEND_RSLT = 0b10
 
-    NMAC_FLAG_MASK = ~__CODE_SEND_WAIT & 0xFF
+    __CODE_MAC_SEND_WAIT = 1
+
+    NMAC_FLAG_MASK = ~__CODE_MAC_SEND_WAIT & 0xFF
 
     def __init__(self, stats=None, handler=None, evnt_handler=None, mac_handler=None, uart_handler=None):
         super(CloudChaser, self).__init__()
@@ -115,7 +120,7 @@ class CloudChaser(Serf):
             name='mac_send',
             code=CloudChaser.CODE_ID_MAC_SEND,
             encode=lambda typ, dest, data, addr=0: struct.pack(
-                f"<BBHHH{len(data)}s", typ & 0xFF, ~CloudChaser.__CODE_SEND_WAIT & 0xFF, addr & 0xFFFF, dest & 0xFFFF, len(data), data
+                f"<BBHHH{len(data)}s", typ & 0xFF, ~CloudChaser.__CODE_MAC_SEND_WAIT & 0xFF, addr & 0xFFFF, dest & 0xFFFF, len(data), data
             )
         )
 
@@ -123,8 +128,7 @@ class CloudChaser(Serf):
             name='mac_send_wait',
             code=CloudChaser.CODE_ID_MAC_SEND,
             encode=lambda typ, dest, data, flag=0, addr=0: struct.pack(
-                f"<BBHHH{len(data)}s", typ & 0xFF, CloudChaser.__CODE_SEND_WAIT & 0xFF, addr & 0xFFFF,
-                dest & 0xFFFF, len(data), data
+                f"<BBHHH{len(data)}s", typ & 0xFF, CloudChaser.__CODE_MAC_SEND_WAIT & 0xFF, addr & 0xFFFF, dest & 0xFFFF, len(data), data
             ),
             decode=lambda data: struct.unpack("<HI", data),
             response=CloudChaser.CODE_ID_MAC_SEND
@@ -141,7 +145,7 @@ class CloudChaser(Serf):
                     f"<HHBB{len(data)}s", addr & CloudChaser.NET_ADDR_MASK,
                     port & CloudChaser.NET_PORT_MASK,
                     typ & CloudChaser.NET_TYPE_MASK,
-                    int(mesg) & 0xFF,
+                    (CloudChaser.__CODE_SEND_MESG if mesg else 0) | CloudChaser.__CODE_SEND_RSLT,
                     data
                 )
             else:

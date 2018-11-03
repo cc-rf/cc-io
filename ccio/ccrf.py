@@ -10,6 +10,7 @@ import argparse
 import argcomplete
 import threading
 import subprocess
+import traceback
 
 from . import util
 from .util import adict
@@ -25,6 +26,8 @@ class CCRF:
     MAC_DGRM = CloudChaser.NMAC_SEND_DGRM
     MAC_MESG = CloudChaser.NMAC_SEND_MESG
     MAC_STRM = CloudChaser.NMAC_SEND_STRM
+
+    BASE_SIZE = CloudChaser.NET_BASE_SIZE
 
     device = None
     cc = None
@@ -289,35 +292,41 @@ class CCRF:
             '-d', '--dest',
             type=lambda p: int(p, 16),
             default=0,
-            help='destination address (default: broadcast)'
+            help='destination address (default: broadcast).'
         )
         parser_send.add_argument(
             '-p', '--path',
             type=lambda p: [int(pi) for pi in p.split(',', 1)],
             default=(0, 0),
-            help='source route (port: 0-1023, type: 0-15) (int, default=0,0)'
+            help='source route (port: 0-1023, type: 0-15) (int, default=0,0).'
         )
         parser_send.add_argument(
             '-m', '--mesg',
             action="store_true",
-            help='send as a message and await receipt'
+            help='send as a message and await receipt.'
         )
         parser_send.add_argument(
             '-S', '--split',
             type=int,
             default=-1,
-            help='send every n bytes (default: until eof)'
+            help='send every n bytes (default: until eof).'
         )
         parser_send.add_argument(
             '-i', '--input',
-            help='file to send data from (default: stdin or cmdline)'
+            default=sys.stdin,
+            help='file to send data from (default: stdin).'
         )
         parser_send.add_argument(
-            'data',
-            type=lambda p: bytearray(p, 'ascii'),
-            default=b'-',
-            nargs='?',
-            help='data to send or "-"/nothing for stdin'
+            '-I', '--no-input',
+            action="store_true",
+            help='do not read from stdin by default.'
+        )
+        parser_send.add_argument(
+            '-tx', '--data',
+            type=lambda p: bytes(p, 'ascii'),
+            action='append',
+            default=[],
+            help='data to send (before input if given, otherwise -I implied).'
         )
 
         parser_recv = subparsers.add_parser('recv', help='receive data')
@@ -326,70 +335,71 @@ class CCRF:
             '-s', '--source',
             type=lambda p: int(p, 16),
             default=0,
-            help='source address to receive from (hex, default=any)'
+            help='source address to receive from (hex, default=any).'
         )
         parser_recv.add_argument(
             '-p', '--path',
             type=lambda p: [int(pi) for pi in p.split(',', 1)],
             default=(0, 0),
-            help='source route (port: 0-1023, type: 0-15) (int, default=0,0)'
+            help='source route (port: 0-1023, type: 0-15) (int, default=0,0).'
         )
         parser_recv.add_argument(
             '-b', '--bcast',
             action="store_true",
-            help='include broadcast messages only'
+            help='include broadcast messages only.'
         )
         parser_recv.add_argument(
             '-B', '--no-bcast',
             action="store_true",
-            help='do not include broadcast messages'
+            help='do not include broadcast messages.'
         )
         parser_recv.add_argument(
             '-1', '--once',
             action="store_true",
-            help='exit after receiving one message (unless -T)'
+            help='exit after receiving one message (unless -T).'
         )
         parser_recv.add_argument(
             '-t', '--timeout',
             type=float,
             default=None,
-            help='amount of time in seconds to receive'
+            help='amount of time in seconds to receive.'
         )
         parser_recv.add_argument(
             '-T', '--timeout-after-first',
             action="store_true",
-            help='start timeout clock after first receive'
+            help='start timeout clock after first receive.'
         )
         parser_recv.add_argument(
             '-n', '--newline',
             action="store_true",
-            help='newline at end of stdout'
+            help='newline at end of stdout.'
         )
         parser_recv.add_argument(
             '-N', '--mesg-newline',
             action="store_true",
-            help='newline after each message on stdout'
+            help='newline after each message on stdout.'
         )
         parser_recv.add_argument(
             '-r', '--respond',
             action="store_true",
-            help='respond to messages with data from stdin'
+            help='respond to messages with data from stdin.'
         )
         parser_recv.add_argument(
             '-o', '--out',
-            help='file to receive into (default=stdout)'
+            default=sys.stdout,
+            help='file to receive into (default=stdout).'
         )
         parser_recv.add_argument(
             '-a', '--append',
             action="store_true",
             default=False,
-            help='append to output file'
+            help='append to output file.'
         )
         parser_recv.add_argument(
             '-f', '--flush',
             action="store_true",
             default=False,
-            help='flush output on each receive'
+            help='flush output on each receive.'
         )
 
         parser_rxtx = subparsers.add_parser('rxtx', help='send and receive data')
@@ -398,105 +408,119 @@ class CCRF:
             '-s', '--source',
             type=lambda p: int(p, 16),
             default=0,
-            help='source address to receive from (hex, default=any)'
+            help='source address to receive from (hex, default=any).'
         )
         parser_rxtx.add_argument(
             '-d', '--dest',
             type=lambda p: int(p, 16),
             default=None,
-            help='destination address (default: source)'
+            help='destination address (default: source).'
         )
         parser_rxtx.add_argument(
             '-p', '--path',
             type=lambda p: [int(pi) for pi in p.split(',', 1)],
             default=(0, 0),
-            help='source route (port: 0-1023, type: 0-15) (int, default=0,0)'
+            help='source route (port: 0-1023, type: 0-15) (int, default=0,0).'
         )
         parser_rxtx.add_argument(
             '-P', '--path-dest',
             type=lambda p: [int(pi) for pi in p.split(',', 1)],
             default=None,
-            help='destination route (port: 0-1023, type: 0-15) (int, default=path)'
+            help='destination route (port: 0-1023, type: 0-15) (int, default=path).'
         )
         parser_rxtx.add_argument(
             '-m', '--mesg',
             action="store_true",
-            help='send as a message and await receipt'
+            help='send as a message and await receipt.'
         )
         parser_rxtx.add_argument(
             '-b', '--bcast',
             action="store_true",
-            help='include broadcast messages only'
+            help='include broadcast messages only.'
         )
         parser_rxtx.add_argument(
             '-B', '--no-bcast',
             action="store_true",
-            help='do not include broadcast messages'
+            help='do not include broadcast messages.'
         )
         parser_rxtx.add_argument(
             '-1', '--once',
             action="store_true",
-            help='exit after receiving one message'
+            help='exit after receiving one message (unless -T).'
         )
         parser_rxtx.add_argument(
             '-t', '--timeout',
             type=float,
             default=None,
-            help='amount of time in seconds to receive'
+            help='amount of time in seconds to receive.'
         )
         parser_rxtx.add_argument(
             '-T', '--timeout-after-first',
             action="store_true",
-            help='start timeout clock after first receive (unless -T)'
+            help='start timeout clock after first receive.'
         )
         parser_rxtx.add_argument(
             '-n', '--newline',
             action="store_true",
-            help='newline at end of stdout'
+            help='newline at end of stdout.'
         )
         parser_rxtx.add_argument(
             '-N', '--mesg-newline',
             action="store_true",
-            help='newline after each message on stdout'
+            help='newline after each message on stdout.'
         )
         parser_rxtx.add_argument(
             '-S', '--split',
             type=int,
             default=-1,
-            help='send every n bytes (default: until eof)'
+            help='send every n bytes (default: until eof).'
         )
         parser_rxtx.add_argument(
             '-i', '--input',
-            help='file to send data from (default: stdout or cmdline)'
+            default=sys.stdin,
+            help='file to send data from (default: stdin).'
+        )
+        parser_rxtx.add_argument(
+            '-I', '--no-input',
+            action="store_true",
+            help='do not read from stdin by default.'
         )
         parser_rxtx.add_argument(
             '-o', '--out',
-            help='file to receive into (default=stdout)'
+            default=sys.stdout,
+            help='file to receive into (default=stdout).'
         )
         parser_rxtx.add_argument(
             '-a', '--append',
             action="store_true",
-            help='append to output file'
+            help='append to output file.'
         )
         parser_rxtx.add_argument(
             '-f', '--flush',
             action="store_true",
-            help='flush output on each receive'
+            help='flush output on each receive.'
+        )
+        parser_rxtx.add_argument(
+            '-tx', '--data',
+            type=lambda p: bytes(p, 'ascii'),
+            action='append',
+            default=[],
+            help='data to send (before input if given, otherwise -I implied).'
         )
         parser_rxtx.add_argument(
             '-e', '--exec',
             type=lambda p: p.split(),
-            help='execute program and pipe stdin/stdout over rf'
+            help='execute program and pipe stdin/stdout over rf.'
         )
         parser_rxtx.add_argument(
             '-ei', '--exec-in',
             type=lambda p: p.split(),
-            help='execute program and pipe stdout over rf'
+            help='execute program and pipe stdout over rf.'
         )
         parser_rxtx.add_argument(
             '-eo', '--exec-out',
             type=lambda p: p.split(),
-            help='execute program and pipe to stdin from rf'
+            help='execute program and pipe to stdin from rf.'
         )
 
         # parser_monitor = subparsers.add_parser('monitor', help='monitor i/o stats')
@@ -507,7 +531,8 @@ class CCRF:
         ccrf = CCRF(args.device)
 
         try:
-            eval(f"CCRF._command_{args.command}(ccrf, args)")
+            command = getattr(CCRF, f"_command_{args.command}")
+            command(ccrf, args)
         except KeyboardInterrupt:
             sys.stderr.write(os.linesep)
         finally:
@@ -572,60 +597,59 @@ class CCRF:
 
     @staticmethod
     def _command_send(ccrf, args, *, rxtx=False):
-        if args.mesg and not args.dest:
-            print("error: mesg requires destination", file=sys.stderr)
-            exit(-1)
+        if rxtx:
+            def done(r): return r
+        else:
+            done = exit
 
-        send = (lambda *p: (0 if ccrf.send(*p) else 0)) if not args.mesg else ccrf.mesg
+        if args.mesg and not args.dest:
+            return done("error: mesg requires destination")
+
+        if args.no_input:
+            args.input = None
+
+        send = ccrf.send if not args.mesg else ccrf.mesg
         result = 0
 
         path = args.path_dest if rxtx else args.path
 
-        if not rxtx and args.data and args.data != b'-':
-            result += send(args.dest, path[0], path[1], args.data)
+        for data in args.data:
+            result += send(args.dest, path[0], path[1], data)
 
-        if args.input or rxtx or (not args.data or args.data == b'-'):
-            inf = sys.stdin
+        if args.verbose and not args.input and not args.data:
+            return done("warning: nothing sent")
 
-            if args.input:
-                if isinstance(args.input, str):
-                    inf = open(args.input, 'rb')
+        if args.input == sys.stdin and args.data:
+            return done(result)
+
+        inf = open(args.input, 'rb') if isinstance(args.input, str) else  args.input
+
+        read = inf.buffer.read if hasattr(inf, 'buffer') else inf.read
+
+        try:
+            while inf.readable():
+                data = read(args.split)
+
+                if data:
+                    sent = send(args.dest, path[0], path[1], data)
+
+                    if args.verbose:
+                        CCRF.__print_mesg(ccrf.addr(), args.dest, path[0], path[1], data)
+
+                    result += sent
                 else:
-                    inf = args.input
+                    break
 
-            try:
-                while inf.readable():
-                    if inf is sys.stdin:
-                        data = bytes(inf.read(args.split), 'ascii')
-                    else:
-                        data = inf.read(args.split)
+        except IOError:
+            pass
 
-                    if data:
-                        sent = send(args.dest, path[0], path[1], data)
-
-                        if args.verbose:
-                            CCRF.__print_mesg(ccrf.addr(), args.dest, path[0], path[1], data)
-
-                        result += sent
-                    else:
-                        break
-
-            except IOError:
-                pass
-            finally:
-                exit(result)
-
-        exit(result)
+        return done(result)
 
     @staticmethod
     def _command_recv(ccrf, args):
-        out = sys.stdout
+        out = open(args.out, 'w+b' if args.append else 'wb') if isinstance(args.out, str) else args.out
 
-        if args.out:
-            if isinstance(args.out, str):
-                out = open(args.out, 'w+b' if args.append else 'wb')
-            else:
-                out = args.out
+        write = out.buffer.write if hasattr(out, 'buffer') else out.write
 
         try:
             last = 0
@@ -643,13 +667,7 @@ class CCRF:
                     if args.source and mesg.addr != args.source:
                         continue
 
-                    if out is sys.stdout:
-                        out.write(
-                            str(mesg.data, 'ascii') +
-                            (os.linesep if args.mesg_newline else '')
-                        )
-                    else:
-                        out.write(mesg.data)
+                    write(mesg.data)
 
                     if args.flush:
                         out.flush()
@@ -661,7 +679,7 @@ class CCRF:
                         if not args.flush:
                             out.flush()
 
-                        data = bytes(sys.stdin.read(), 'ascii')
+                        data = bytes(sys.stdin.read())
 
                         if data:
                             ccrf.mesg(mesg.addr, mesg.port, mesg.type, data)
@@ -699,7 +717,7 @@ class CCRF:
             args.path_dest = args.path
 
         if args.exec:
-            if args.input or args.out:
+            if args.input != sys.stdin or args.out != sys.stdout:
                 raise ValueError("cannot specify input or output files when using pipe")
 
             sp = subprocess.Popen(
@@ -711,7 +729,7 @@ class CCRF:
             args.input = sp.stdout
             args.out = sp.stdin
         else:
-            if args.input:
+            if args.input != sys.stdin:
                 raise ValueError("cannot specify input files when using input pipe")
 
             if args.exec_in:
@@ -731,8 +749,14 @@ class CCRF:
 
                 args.out = spi.stdin
 
+        def run_send():
+            rslt = CCRF._command_send(ccrf, args, rxtx=True)
+
+            if isinstance(rslt, str):
+                print(rslt, file=sys.stderr)
+
         threading.Thread(
-            target=lambda: CCRF._command_send(ccrf, args, rxtx=True),
+            target=run_send,
             daemon=True
         ).start()
 

@@ -20,11 +20,11 @@ def run(args):
             pass
 
     else:
-        data = b'a' * 1130
+        data = b'a' * CCRF.BASE_SIZE
 
         while 1:
-            # ccrf.send_mac(CCRF.MAC_STRM, 0x4BC9, data=data, wait=True)
-            ccrf.mesg(0x4BD3, port=101, typ=1, data=data)
+            # ccrf.send_mac(CCRF.MAC_DGRM, 0x4BC9, data=data, wait=False)
+            ccrf.mesg(0x4BC9, port=101, typ=1, data=data)
 
 
 def main():
