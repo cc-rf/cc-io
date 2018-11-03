@@ -5,6 +5,7 @@ import struct
 import time
 import threading
 import traceback
+from warnings import warn
 
 from . import cobs
 from .util import adict
@@ -54,6 +55,9 @@ class Serf(object):
 
             _sync = WaitSync(handle, _writer, multi)
             self._sync[response] = _sync
+
+            if response != code:
+                self.codes[response] = self.codes[code]
 
             self.io[name] = _sync.write_wait
 
@@ -171,6 +175,9 @@ class Serf(object):
                 break
 
     def process(self, code, data):
+        if code not in self.codes:
+            warn("using default handlers for unknown code")
+
         encode, decode, handler = self.codes.get(code, (None, lambda data: (code, data), self.on_frame))
 
         sync = self._sync.get(code, None)
