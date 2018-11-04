@@ -4,35 +4,35 @@ import sys
 import struct
 import time
 import threading
-import traceback
 from warnings import warn
 
 from . import cobs
 from .util import adict
+from .asyncq import AsyncQ
 
 
-class Serf(object):
+class Serf:
     SERF_CODE_PROTO_M   = 0b11100000
     SERF_CODE_PROTO_VAL = 0b10100000
     SERF_CODE_M         = 0b00011111
     SERF_DECODE_ERROR   = (0, None)
 
+    cmds = None
+
     def __init__(self, write=None):
         self.io = adict()
-        self.codes = {}
+        self.cmds = []
         self.serial = None
         self._sync = {}
         self._thread_input = None
         self._thread_write = None
         self._thread_proc = None
-        self._write_queue = []
-        self._write_sync = threading.Semaphore(0)
-        self._proc_queue = []
-        self._proc_sync = threading.Semaphore(0)
+        self._write_q = AsyncQ()
+        self._proc_q = AsyncQ()
         self.write = write
         self.port = None
 
-    def add(self, name, code, encode=None, decode=None, handle=None, response=None, multi=False):
+    def add(self, name, code=None, encode=None, decode=None, handle=None, response=None, multi=False):
         if encode is None:
             encode = lambda *args, **kwds: bytes()
 
@@ -42,22 +42,26 @@ class Serf(object):
         if handle is None:
             handle = self.on_frame
 
-        self.codes[code] = (encode, decode, handle)
+        cmd = adict(
+            name=name, code=code, response=response,
+            encode=encode, decode=decode, multi=multi,
+            handle=handle
+        )
+
+        self.cmds.append(cmd)
 
         if response is None:
             self.io[name] = lambda *args, **kwds: self._write(code, encode(*args, **kwds))
 
         else:
             if handle == self.on_frame:
-                handle = lambda *args: args
+                cmd.handle = handle = lambda *args: args
 
-            _writer = lambda *args, **kwds: self._write(code, encode(*args, **kwds))
+            _writer = None if code is None else \
+                lambda *a, **k: self._write(code, encode(*a, **k))
 
             _sync = WaitSync(handle, _writer, multi)
-            self._sync[response] = _sync
-
-            if response != code:
-                self.codes[response] = self.codes[code]
+            cmd.sync = _sync
 
             self.io[name] = _sync.write_wait
 
@@ -115,12 +119,9 @@ class Serf(object):
         self._thread_proc.start()
 
     def close(self):
-        try:
-            self.serial.close()
-            # self.join()
-            self._thread_input = None
-        except:
-            pass
+        self.serial.close()
+        # self.join()
+        self._thread_input = None
 
     def reopen(self):
         self.serial.timeout = .25
@@ -135,21 +136,12 @@ class Serf(object):
         if self._thread_input is None or not self._thread_input.isAlive():
             return True
 
-        try:
-            self._thread_input.join(timeout)
-            return not self._thread_input.isAlive()
-
-        except:
-            return False
-
-    def send(self, code, *args, **kwds):
-        encode = self.codes[code][0]
-        self._write(code, encode(*args, **kwds))
+        self._thread_input.join(timeout)
+        return not self._thread_input.isAlive()
 
     def _write(self, code, data):
         if self.serial is not None:
-            self._write_queue.append((code, data))
-            self._write_sync.release()
+            self._write_q.send((code, data))
 
         elif self.write is not None:
             self.write(Serf.encode(code, data))
@@ -157,52 +149,35 @@ class Serf(object):
             print("no output method: code=0x{:02X} len={}".format(code, len(data)), file=sys.stderr)
 
     def _write_thread(self):
-        while self.serial.isOpen():
-            self._write_sync.acquire()
-            code, data = self._write_queue.pop(0)
-
+        for code, data in self._write_q.recv():
             try:
                 self.serial.write(Serf.encode(code, data))
 
-            except KeyboardInterrupt:
-                sys.exit(0)
-
+                if not self.serial.isOpen():
+                    break
             except IOError:
                 continue
 
-            except:
-                traceback.print_exc()
-                break
-
     def process(self, code, data):
-        if code not in self.codes:
-            warn("using default handlers for unknown code")
-
-        encode, decode, handler = self.codes.get(code, (None, lambda data: (code, data), self.on_frame))
-
-        sync = self._sync.get(code, None)
-
-        if sync is not None:
-            sync.process(decode(data))
+        for cmd in self.cmds:
+            if cmd.response == code:
+                break
         else:
-            self._proc_queue.append((handler, decode, data))
-            self._proc_sync.release()
+            warn(f"received unknown command code 0x{code:02X}")
+            return
+
+        if hasattr(cmd, 'sync'):
+            cmd.sync.process(cmd.decode(data))
+        else:
+            self._proc_q.send((cmd.handler, cmd.decode, data))
 
     def _proc_thread(self):
-        while 1:
-            self._proc_sync.acquire()
-            handler, decode, data = self._proc_queue.pop(0)
+        for handler, decode, data in self._proc_q.recv():
+            handler(*decode(data))
 
-            try:
-                handler(*decode(data))
-
-            except KeyboardInterrupt:
-                sys.exit(0)
-            except:
-                traceback.print_exc()
-
-    def on_frame(self, code, data):
-        print("unhandled: code=0x{:02X} len={}".format(code, len(data)), file=sys.stderr)
+    @staticmethod
+    def on_frame(code, data):
+        print(f"unhandled: code=0x{code:02X} len={len(data)}", file=sys.stderr)
 
     def _input_thread(self):
         try:
@@ -224,24 +199,15 @@ class Serf(object):
                 result = Serf.decode(data[:idx])
 
                 if result is not Serf.SERF_DECODE_ERROR:
-                    try:
-                        self.process(*result)
-                    except:
-                        traceback.print_exc()
+                    self.process(*result)
 
                 data = bytearray()
-
-        except KeyboardInterrupt:
-            sys.exit(0)
 
         except IOError:
             pass
 
-        except:
-            traceback.print_exc()
 
-
-class WaitSync(object):
+class WaitSync:
     sem = None
     multi = False
     result = []
@@ -260,6 +226,14 @@ class WaitSync(object):
             self.write_wait = self.write_wait_multi
         else:
             self.write_wait = self.write_wait_normal
+
+        if writer is None:
+            self.writer = lambda *a, **k: None
+            threading.Thread(target=self.__passive_wait, daemon=True).start()
+
+    def __passive_wait(self):
+        while 1:
+            self.write_wait()
 
     def process(self, data):
         if self.done:
@@ -303,4 +277,4 @@ class WaitSync(object):
         res = self.result
         self.result = None
         res = self.handle(*res)
-        return res[0] if len(res) == 1 else res
+        return res[0] if res and len(res) == 1 else res

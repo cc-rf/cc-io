@@ -16,6 +16,7 @@ from . import util
 from .util import adict
 from .cloudchaser import CloudChaser
 from .stats import Stats
+from .asyncq import AsyncQ
 
 
 class CCRF:
@@ -29,26 +30,26 @@ class CCRF:
 
     BASE_SIZE = CloudChaser.NET_BASE_SIZE
 
+    EVNT_PEER = CloudChaser.NET_EVNT_PEER
+    EVNT_PEER_SET = CloudChaser.NET_EVNT_PEER_SET
+    EVNT_PEER_EXP = CloudChaser.NET_EVNT_PEER_EXP
+
     device = None
     cc = None
     stats = None
 
     __addr = None
 
-    __recv_queue = []
-    __recv_sync = None
-    __recv_wait = False
-    __recv_mac_queue = []
-    __recv_mac_sync = None
-    __recv_mac_wait = False
+    __recv_q = None
+    __recv_mac_q = None
+    __evnt_q = None
 
     __status_last = None
 
     def __init__(self, device, stats=None):
-        self.__recv_queue = []
-        self.__recv_sync = threading.Semaphore(0)
-        self.__recv_mac_queue = []
-        self.__recv_mac_sync = threading.Semaphore(0)
+        self.__recv_q = AsyncQ()
+        self.__recv_mac_q = AsyncQ()
+        self.__evnt_q = AsyncQ()
 
         self.device = device
 
@@ -59,7 +60,8 @@ class CCRF:
         self.cc = CloudChaser(
             stats=self.stats,
             handler=self.__handle_recv,
-            mac_handler=self.__handle_recv_mac
+            mac_handler=self.__handle_recv_mac,
+            evnt_handler=self.__handle_evnt
         )
 
         self.cc.open(device)
@@ -152,6 +154,14 @@ class CCRF:
         """
         return self.cc.io.mesg(addr, port, typ, data)
 
+    def evnt(self, once=False, timeout=None):
+        """Receive events.
+        :param once: finish receiving after one message.
+        :param timeout: timeout in seconds or None.
+        :return: Iterater of adict(event,data).
+        """
+        return self.__evnt_q.recv(once, timeout)
+
     def recv(self, port=None, typ=None, once=False, timeout=None):
         """Receive messages (iterator).
 
@@ -161,28 +171,18 @@ class CCRF:
         :param timeout: timeout in seconds or None.
         :return: iterator that receives once or forever.
         """
-        self.__recv_wait = True
+        for mesg in self.__recv_q.recv(once=False, timeout=timeout):
 
-        try:
-            while 1:
-                if not self.__recv_sync.acquire(timeout=timeout):
-                    break
+            if port is not None and mesg.port != port:
+                continue
 
-                mesg = self.__recv_queue.pop(0)
+            if typ is not None and mesg.type != typ:
+                continue
 
-                if port is not None and mesg.port != port:
-                    continue
+            yield mesg
 
-                if typ is not None and mesg.type != typ:
-                    continue
-
-                yield mesg
-
-                if once:
-                    break
-
-        finally:
-            self.__recv_wait = False
+            if once:
+                break
 
     def recv_mac(self, once=False, timeout=None):
         """Receive MAC messages (iterator).
@@ -191,20 +191,7 @@ class CCRF:
         :param timeout: timeout in seconds or None.
         :return: iterator that receives once or forever.
         """
-        self.__recv_mac_wait = True
-
-        try:
-            while 1:
-                self.__recv_mac_sync.acquire(timeout=timeout)
-                mesg = self.__recv_mac_queue.pop(0)
-
-                yield mesg
-
-                if once:
-                    break
-
-        finally:
-            self.__recv_mac_wait = False
+        return self.__recv_mac_q.recv(once, timeout)
 
     def trxn(self, addr, port, typ, wait, data=b''):
         """Transact data with a peer.
@@ -240,19 +227,18 @@ class CCRF:
         """
         return self.cc.io.peer()
 
-    def __handle_recv(self, cc, addr, dest, port, typ, data):
-        if self.__recv_wait:
-            self.__recv_queue.append(adict(
-                addr=addr, dest=dest, port=port, type=typ, data=data
-            ))
-            self.__recv_sync.release()
+    def __handle_recv(self, addr, dest, port, typ, data):
+        self.__recv_q.send(adict(
+            addr=addr, dest=dest, port=port, type=typ, data=data
+        ))
 
-    def __handle_recv_mac(self, cc, addr, peer, dest, rssi, lqi, data):
-        if self.__recv_mac_wait:
-            self.__recv_mac_queue.append(adict(
-                addr=addr, peer=peer, dest=dest, rssi=rssi, lqi=lqi, data=data
-            ))
-            self.__recv_mac_sync.release()
+    def __handle_recv_mac(self, addr, peer, dest, rssi, lqi, data):
+        self.__recv_mac_q.send(adict(
+            addr=addr, peer=peer, dest=dest, rssi=rssi, lqi=lqi, data=data
+        ))
+
+    def __handle_evnt(self, evnt):
+        self.__evnt_q.send(evnt)
 
     @staticmethod
     def argparse_device_arg(parser):
@@ -286,6 +272,14 @@ class CCRF:
 
         parser_peer = subparsers.add_parser('peer', help='print peer table')
 
+        def valid_split(s):
+            s = int(s)
+
+            if not (-1 <= s < 0x10000):
+                raise argparse.ArgumentTypeError("split must be in [-1, 16K)")
+
+            return s
+
         parser_send = subparsers.add_parser('send', help='send a datagram')
         parser_send.add_argument('-v', '--verbose', action='store_true', help='verbose output')
         parser_send.add_argument(
@@ -307,7 +301,7 @@ class CCRF:
         )
         parser_send.add_argument(
             '-S', '--split',
-            type=int,
+            type=valid_split,
             default=-1,
             help='send every n bytes (default: until eof).'
         )
@@ -471,7 +465,7 @@ class CCRF:
         )
         parser_rxtx.add_argument(
             '-S', '--split',
-            type=int,
+            type=valid_split,
             default=-1,
             help='send every n bytes (default: until eof).'
         )
@@ -509,21 +503,21 @@ class CCRF:
         )
         parser_rxtx.add_argument(
             '-e', '--exec',
-            type=lambda p: p.split(),
+            type=lambda p: [pi.strip() for pi in p.split()],
             help='execute program and pipe stdin/stdout over rf.'
         )
         parser_rxtx.add_argument(
             '-ei', '--exec-in',
-            type=lambda p: p.split(),
+            type=lambda p: [pi.strip() for pi in p.split()],
             help='execute program and pipe stdout over rf.'
         )
         parser_rxtx.add_argument(
             '-eo', '--exec-out',
-            type=lambda p: p.split(),
+            type=lambda p: [pi.strip() for pi in p.split()],
             help='execute program and pipe to stdin from rf.'
         )
 
-        # parser_monitor = subparsers.add_parser('monitor', help='monitor i/o stats')
+        parser_monitor = subparsers.add_parser('monitor', help='monitor i/o stats')
 
         argcomplete.autocomplete(parser)
         args = parser.parse_args()
@@ -596,6 +590,16 @@ class CCRF:
         )
 
     @staticmethod
+    def _command_monitor(ccrf, args):
+        for evnt in ccrf.evnt():
+            if evnt.id == CCRF.EVNT_PEER:
+                print(f"{evnt.addr:04X}: {'SET' if evnt.action == CCRF.EVNT_PEER_SET else 'EXP'}")
+            else:
+                print(f"event: {evnt.id} data={evnt.data}")
+
+            CCRF._command_peer(ccrf, args)
+
+    @staticmethod
     def _command_send(ccrf, args, *, rxtx=False):
         if rxtx:
             def done(r): return r
@@ -607,6 +611,12 @@ class CCRF:
 
         if args.no_input:
             args.input = None
+        elif args.input != sys.stdin:
+            size = os.path.getsize(args.input)
+
+            if size > 16384 and args.split < 0:
+                print(f"{args.input}: splitting {size} bytes into 16K chunks", file=sys.stderr)
+                args.split = 16384
 
         send = ccrf.send if not args.mesg else ccrf.mesg
         result = 0
@@ -622,7 +632,7 @@ class CCRF:
         if args.input == sys.stdin and args.data:
             return done(result)
 
-        inf = open(args.input, 'rb') if isinstance(args.input, str) else  args.input
+        inf = open(args.input, 'rb') if isinstance(args.input, str) else args.input
 
         read = inf.buffer.read if hasattr(inf, 'buffer') else inf.read
 

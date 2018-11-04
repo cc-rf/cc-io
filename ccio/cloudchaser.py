@@ -1,12 +1,8 @@
 """Cloud Chaser Support Library
 """
-import os
 import sys
 import struct
 import time
-import random
-import threading
-import traceback
 
 from .serf import Serf
 from .util import adict
@@ -111,7 +107,7 @@ class CloudChaser(Serf):
 
         self.add(
             name='mac_recv',
-            code=CloudChaser.CODE_ID_MAC_RECV,
+            response=CloudChaser.CODE_ID_MAC_RECV,
             decode=lambda data: struct.unpack(f"<HHHHbB{len(data) - 10}s", data),
             handle=self.handle_mac_recv
         )
@@ -120,7 +116,8 @@ class CloudChaser(Serf):
             name='mac_send',
             code=CloudChaser.CODE_ID_MAC_SEND,
             encode=lambda typ, dest, data, addr=0: struct.pack(
-                f"<BBHHH{len(data)}s", typ & 0xFF, ~CloudChaser.__CODE_MAC_SEND_WAIT & 0xFF, addr & 0xFFFF, dest & 0xFFFF, len(data), data
+                f"<BBHHH{len(data)}s", typ & 0xFF, ~CloudChaser.__CODE_MAC_SEND_WAIT & 0xFF,
+                addr & 0xFFFF, dest & 0xFFFF, len(data), data
             )
         )
 
@@ -128,7 +125,8 @@ class CloudChaser(Serf):
             name='mac_send_wait',
             code=CloudChaser.CODE_ID_MAC_SEND,
             encode=lambda typ, dest, data, flag=0, addr=0: struct.pack(
-                f"<BBHHH{len(data)}s", typ & 0xFF, CloudChaser.__CODE_MAC_SEND_WAIT & 0xFF, addr & 0xFFFF, dest & 0xFFFF, len(data), data
+                f"<BBHHH{len(data)}s", typ & 0xFF, CloudChaser.__CODE_MAC_SEND_WAIT & 0xFF,
+                addr & 0xFFFF, dest & 0xFFFF, len(data), data
             ),
             decode=lambda data: struct.unpack("<HI", data),
             response=CloudChaser.CODE_ID_MAC_SEND
@@ -174,7 +172,7 @@ class CloudChaser(Serf):
 
         self.add(
             name='recv',
-            code=CloudChaser.CODE_ID_RECV,
+            response=CloudChaser.CODE_ID_RECV,
             decode=lambda data: struct.unpack(f"<HHHB{len(data) - 7}s", data),
             handle=self.handle_recv
         )
@@ -215,14 +213,16 @@ class CloudChaser(Serf):
         def decode_evnt(data):
             event, data = struct.unpack(f"<B{len(data) - 1}s", data)
 
-            if event == CloudChaser.NET_EVNT_PEER:
-                data = struct.unpack("<HB", data)
+            evnt = adict(id=event, data=data)
 
-            return event, data
+            if event == CloudChaser.NET_EVNT_PEER:
+                evnt.addr, evnt.action = struct.unpack("<HB", data)
+
+            return [evnt]
 
         self.add(
             name='evnt',
-            code=CloudChaser.CODE_ID_EVNT,
+            response=CloudChaser.CODE_ID_EVNT,
             decode=decode_evnt,
             handle=self.handle_evnt
         )
@@ -232,6 +232,7 @@ class CloudChaser(Serf):
             code=CloudChaser.CODE_ID_UART,
             encode=lambda data: data,
             decode=lambda data: [data],
+            response=CloudChaser.CODE_ID_UART,
             handle=self.handle_uart
         )
 
@@ -281,7 +282,7 @@ class CloudChaser(Serf):
             self.stats.unlock()
 
         for mac_handler in self.mac_handlers:
-            mac_handler(self, addr, peer, dest, rssi, lqi, data)
+            mac_handler(addr, peer, dest, rssi, lqi, data)
 
     def handle_recv(self, addr, dest, port, typ, data):
         if self.stats is not None:
@@ -294,12 +295,12 @@ class CloudChaser(Serf):
             self.stats.unlock()
 
         for handler in self.handlers:
-            handler(self, addr, dest, port, typ, data)
+            handler(addr, dest, port, typ, data)
 
-    def handle_evnt(self, event, data):
+    def handle_evnt(self, evnt):
         for evnt_handler in self.evnt_handlers:
-            evnt_handler(self, event, data)
+            evnt_handler(evnt)
 
     def handle_uart(self, data):
         for uart_handler in self.uart_handlers:
-            uart_handler(self, data)
+            uart_handler(data)
