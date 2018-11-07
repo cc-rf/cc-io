@@ -28,7 +28,7 @@ class CCRF:
     MAC_MESG = CloudChaser.NMAC_SEND_MESG
     MAC_STRM = CloudChaser.NMAC_SEND_STRM
 
-    BASE_SIZE = CloudChaser.NET_BASE_SIZE
+    MTU = CloudChaser.NET_BASE_SIZE
 
     EVNT_PEER = CloudChaser.NET_EVNT_PEER
     EVNT_PEER_SET = CloudChaser.NET_EVNT_PEER_SET
@@ -115,20 +115,16 @@ class CCRF:
         """
         self.cc.io.rainbow()
 
-    def send(self, addr, port, typ, data=b'', wait=True):
+    def send(self, addr, port, typ, data=b''):
         """Send a simple datagram message.
 
         :param addr: Destination node address.
         :param port: Destination port number.
         :param typ: User type identifier.
         :param data: Data to send.
-        :param wait: Wait for send to complete.
         :return: Number of bytes sent if wait is True.
         """
-        if wait:
-            return self.cc.io.send(addr, port, typ, data, mesg=False)
-        else:
-            return self.cc.io.resp(addr, port, typ, data, mesg=False)
+        return self.cc.io.send(addr, port, typ, data, mesg=False)
 
     def send_mac(self, typ, dest, data, addr=0, wait=True):
         """Send a MAC-layer datagram.

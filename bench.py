@@ -16,21 +16,31 @@ def run(args):
     ccrf.print_status()
 
     if args.receiver:
-        for mesg in ccrf.recv(port=101, typ=1):
-            pass
+        if args.trxn:
+            for mesg in ccrf.recv(port=101, typ=1):
+                ccrf.resp(mesg.addr, mesg.port, mesg.type)
+        else:
+            for mesg in ccrf.recv():
+                pass
 
     else:
-        data = b'a' * CCRF.BASE_SIZE
+        data = b'a' * (CCRF.MTU * 10)
 
-        while 1:
-            # ccrf.send_mac(CCRF.MAC_DGRM, 0x4BC9, data=data, wait=False)
-            ccrf.mesg(0x4BC9, port=101, typ=1, data=data)
+        if args.trxn:
+            while 1:
+                list(ccrf.trxn(0x4BC9, port=101, typ=1, wait=20, data=data))
+
+        else:
+            while 1:
+                # ccrf.send_mac(CCRF.MAC_DGRM, 0x4BC9, data=data, wait=False)
+                s = ccrf.send(0x4BC9, port=101, typ=1, data=data)
 
 
 def main():
     parser = argparse.ArgumentParser(prog="bench")
     CCRF.argparse_device_arg(parser)
     parser.add_argument('-r', '--receiver', action="store_true", help='sync receiver')
+    parser.add_argument('-t', '--trxn', action="store_true", help='transaction')
     argcomplete.autocomplete(parser)
     args = parser.parse_args()
 
