@@ -75,6 +75,10 @@ class CCRF:
         self.__status_last = self.cc.io.status()
         self.__addr = self.__status_last.addr
 
+    def __clear_status(self):
+        self.__status_last = None
+        self.__addr = None
+
     def status(self):
         """Returns the current device status as a dictionary/object.
         """
@@ -99,6 +103,16 @@ class CCRF:
         if not self.__addr:
             self.__load_status()
         return self.__addr
+
+    def addr_set(self, orig, addr):
+        """Set the device address.
+        :param orig: Current device address.
+        :param addr: Desired new address.
+        :return: Actual new address or 0 for error.
+        """
+        rslt = self.cc.io.config_addr(orig, addr)
+        self.__clear_status()
+        return rslt
 
     def echo(self, data):
         """Echo data from the device.
@@ -514,6 +528,23 @@ class CCRF:
             help='execute program and pipe to stdin from rf.'
         )
 
+        parser_addr = subparsers.add_parser('addr', help='show [and set] device address.')
+        parser_addr.add_argument('-q', '--quiet', action='store_true', help='do not print anything.')
+        parser_addr.add_argument(
+            'orig',
+            nargs='?',
+            type=lambda p: int(p, 16),
+            default=None,
+            help='current device address.'
+        )
+        parser_addr.add_argument(
+            'addr',
+            nargs='?',
+            type=lambda p: int(p, 16),
+            default=None,
+            help='new device address.'
+        )
+
         parser_monitor = subparsers.add_parser('monitor', help='monitor i/o stats')
 
         argcomplete.autocomplete(parser)
@@ -566,6 +597,21 @@ class CCRF:
     def _command_rainbow(ccrf, args):
         ccrf.rainbow()
         time.sleep(0.1)
+
+    @staticmethod
+    def _command_addr(ccrf, args):
+        addr = ccrf.addr()
+
+        if args.orig is not None:
+            if args.addr is None:
+                raise argparse.ArgumentError("addr is required.")
+
+            addr = ccrf.addr_set(args.orig, args.addr)
+
+        if not args.quiet:
+            print(f"0x{addr if addr else ccrf.addr():04X}")
+
+        exit(addr != ccrf.addr())
 
     @staticmethod
     def _command_peer(ccrf, args):

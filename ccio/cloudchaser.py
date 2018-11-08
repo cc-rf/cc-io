@@ -8,22 +8,38 @@ from .serf import Serf
 from .util import adict
 
 
+CODE_ID_ECHO = 0
+CODE_ID_STATUS = 1
+CODE_ID_CONFIG = 30
+CODE_ID_CONFIG_RSP = 31
+CODE_ID_MAC_SEND = 2
+CODE_ID_MAC_RECV = 3
+CODE_ID_SEND = 4
+CODE_ID_SEND_DONE = 5
+CODE_ID_RECV = 6
+CODE_ID_TRXN = 7
+CODE_ID_RESP = 8
+CODE_ID_EVNT = 9
+CODE_ID_PEER = 10
+CODE_ID_RESET = 17
+CODE_ID_UART = 26
+CODE_ID_LED = 27
+CODE_ID_RAINBOW = 29
+
+_CODE_CONFIG_ID_ADDR = 0xADD1
+
+_CODE_CONFIG_RSLT_OK = 1
+_CODE_CONFIG_RSLT_ERR = 0
+
+_CODE_SEND_MESG = 0b01
+_CODE_SEND_RSLT = 0b10
+
+_CODE_MAC_SEND_WAIT = 1
+
+_RESET_MAGIC = 0xD1E00D1E
+
+
 class CloudChaser(Serf):
-    CODE_ID_ECHO = 0
-    CODE_ID_STATUS = 1
-    CODE_ID_MAC_SEND = 2
-    CODE_ID_MAC_RECV = 3
-    CODE_ID_SEND = 4
-    CODE_ID_SEND_DONE = 5
-    CODE_ID_RECV = 6
-    CODE_ID_TRXN = 7
-    CODE_ID_RESP = 8
-    CODE_ID_EVNT = 9
-    CODE_ID_PEER = 10
-    CODE_ID_RESET = 17
-    CODE_ID_UART = 26
-    CODE_ID_LED = 27
-    CODE_ID_RAINBOW = 29
 
     NET_EVNT_PEER = 0
     NET_EVNT_PEER_SET = 0
@@ -33,23 +49,17 @@ class CloudChaser(Serf):
 
     NET_ADDR_BCST = 0
     NET_ADDR_MASK = 0xFFFF
+    NET_ADDR_BITS = 16
 
     NET_PORT_MASK = 0b1111111111  # 0x3FF, 1023
     NET_TYPE_MASK = 0b1111  # 0xF, 15
-
-    RESET_MAGIC = 0xD1E00D1E
 
     NMAC_SEND_DGRM = 0
     NMAC_SEND_MESG = 1
     NMAC_SEND_TRXN = 2
     NMAC_SEND_STRM = 3
 
-    __CODE_SEND_MESG = 0b01
-    __CODE_SEND_RSLT = 0b10
-
-    __CODE_MAC_SEND_WAIT = 1
-
-    NMAC_FLAG_MASK = ~__CODE_MAC_SEND_WAIT & 0xFF
+    NMAC_FLAG_MASK = ~_CODE_MAC_SEND_WAIT & 0xFF
 
     def __init__(self, stats=None, handler=None, evnt_handler=None, mac_handler=None, uart_handler=None):
         super(CloudChaser, self).__init__()
@@ -62,7 +72,7 @@ class CloudChaser(Serf):
 
         self.add(
             name='echo',
-            code=CloudChaser.CODE_ID_ECHO,
+            code=CODE_ID_ECHO,
             encode=lambda mesg: struct.pack(f"<{len(mesg) + 1}s", mesg + b'\x00'),
             decode=lambda data: [str(data, 'ascii')],
             handle=lambda mesg: sys.stdout.write(mesg)
@@ -70,8 +80,8 @@ class CloudChaser(Serf):
 
         self.add(
             name='reset',
-            code=CloudChaser.CODE_ID_RESET,
-            encode=lambda: struct.pack("<I", CloudChaser.RESET_MAGIC)
+            code=CODE_ID_RESET,
+            encode=lambda: struct.pack("<I", _RESET_MAGIC)
         )
 
         def decode_status(data):
@@ -100,37 +110,26 @@ class CloudChaser(Serf):
 
         self.add(
             name='status',
-            code=CloudChaser.CODE_ID_STATUS,
+            code=CODE_ID_STATUS,
             decode=decode_status,
-            response=CloudChaser.CODE_ID_STATUS
+            response=CODE_ID_STATUS
         )
 
         self.add(
-            name='mac_recv',
-            response=CloudChaser.CODE_ID_MAC_RECV,
-            decode=lambda data: struct.unpack(f"<HHHHbB{len(data) - 10}s", data),
-            handle=self.handle_mac_recv
+            name='config',
+            code=CODE_ID_CONFIG,
+            encode=lambda cid, param, data=b'': struct.pack(f"<II{len(data)}s", cid & 0xFFFFFFFF, param & 0xFFFFFFFF, data),
+            decode=lambda data: struct.unpack("<I", data),
+            response=CODE_ID_CONFIG_RSP
         )
 
-        self.add(
-            name='mac_send',
-            code=CloudChaser.CODE_ID_MAC_SEND,
-            encode=lambda typ, dest, data, addr=0: struct.pack(
-                f"<BBHHH{len(data)}s", typ & 0xFF, ~CloudChaser.__CODE_MAC_SEND_WAIT & 0xFF,
-                addr & 0xFFFF, dest & 0xFFFF, len(data), data
+        def config_addr(orig, addr):
+            return self.io.config(
+                _CODE_CONFIG_ID_ADDR,
+                ((orig & CloudChaser.NET_ADDR_MASK) << CloudChaser.NET_ADDR_BITS) | (addr & CloudChaser.NET_ADDR_MASK)
             )
-        )
 
-        self.add(
-            name='mac_send_wait',
-            code=CloudChaser.CODE_ID_MAC_SEND,
-            encode=lambda typ, dest, data, flag=0, addr=0: struct.pack(
-                f"<BBHHH{len(data)}s", typ & 0xFF, CloudChaser.__CODE_MAC_SEND_WAIT & 0xFF,
-                addr & 0xFFFF, dest & 0xFFFF, len(data), data
-            ),
-            decode=lambda data: struct.unpack("<HI", data),
-            response=CloudChaser.CODE_ID_MAC_SEND
-        )
+        self.io.config_addr = config_addr
 
         def encode_send(addr, port, typ, data, mesg=False, wait=None, rslt=False):
             if (port & self.NET_PORT_MASK) != port:
@@ -143,7 +142,7 @@ class CloudChaser(Serf):
                     f"<HHBB{len(data)}s", addr & CloudChaser.NET_ADDR_MASK,
                     port & CloudChaser.NET_PORT_MASK,
                     typ & CloudChaser.NET_TYPE_MASK,
-                    (CloudChaser.__CODE_SEND_RSLT if rslt else 0) | CloudChaser.__CODE_SEND_MESG if mesg else 0,
+                    (_CODE_SEND_RSLT if rslt else 0) | _CODE_SEND_MESG if mesg else 0,
                     data
                 )
             else:
@@ -156,27 +155,27 @@ class CloudChaser(Serf):
 
         self.add(
             name='send',
-            code=CloudChaser.CODE_ID_SEND,
+            code=CODE_ID_SEND,
             encode=lambda addr, port, typ, data, mesg=False: encode_send(addr, port, typ, data, mesg, rslt=False),
         )
 
         self.add(
             name='mesg',
-            code=CloudChaser.CODE_ID_SEND,
+            code=CODE_ID_SEND,
             encode=lambda addr, port, typ, data: encode_send(addr, port, typ, data, mesg=True, rslt=True),
             decode=lambda data: struct.unpack("<H", data),
-            response=CloudChaser.CODE_ID_SEND_DONE
+            response=CODE_ID_SEND_DONE
         )
 
         self.add(
             name='resp',
-            code=CloudChaser.CODE_ID_RESP,
+            code=CODE_ID_RESP,
             encode=lambda addr, port, typ, data, mesg=True: encode_send(addr, port, typ, data, mesg)
         )
 
         self.add(
             name='recv',
-            response=CloudChaser.CODE_ID_RECV,
+            response=CODE_ID_RECV,
             decode=lambda data: struct.unpack(f"<HHHB{len(data) - 7}s", data),
             handle=self.handle_recv
         )
@@ -188,11 +187,38 @@ class CloudChaser(Serf):
 
         self.add(
             name='trxn',
-            code=CloudChaser.CODE_ID_TRXN,
+            code=CODE_ID_TRXN,
             encode=lambda addr, port, typ, wait, data: encode_send(addr, port, typ, data, mesg=None, wait=wait),
             decode=decode_trxn_stat,
-            response=CloudChaser.CODE_ID_TRXN,
+            response=CODE_ID_TRXN,
             multi=True
+        )
+
+        self.add(
+            name='mac_recv',
+            response=CODE_ID_MAC_RECV,
+            decode=lambda data: struct.unpack(f"<HHHHbB{len(data) - 10}s", data),
+            handle=self.handle_mac_recv
+        )
+
+        self.add(
+            name='mac_send',
+            code=CODE_ID_MAC_SEND,
+            encode=lambda typ, dest, data, addr=0: struct.pack(
+                f"<BBHHH{len(data)}s", typ & 0xFF, ~_CODE_MAC_SEND_WAIT & 0xFF,
+                addr & 0xFFFF, dest & 0xFFFF, len(data), data
+            )
+        )
+
+        self.add(
+            name='mac_send_wait',
+            code=CODE_ID_MAC_SEND,
+            encode=lambda typ, dest, data, flag=0, addr=0: struct.pack(
+                f"<BBHHH{len(data)}s", typ & 0xFF, _CODE_MAC_SEND_WAIT & 0xFF,
+                addr & 0xFFFF, dest & 0xFFFF, len(data), data
+            ),
+            decode=lambda data: struct.unpack("<HI", data),
+            response=CODE_ID_MAC_SEND
         )
 
         def decode_peer(data):
@@ -209,9 +235,9 @@ class CloudChaser(Serf):
 
         self.add(
             name='peer',
-            code=CloudChaser.CODE_ID_PEER,
+            code=CODE_ID_PEER,
             decode=decode_peer,
-            response=CloudChaser.CODE_ID_PEER
+            response=CODE_ID_PEER
         )
 
         def decode_evnt(data):
@@ -226,28 +252,28 @@ class CloudChaser(Serf):
 
         self.add(
             name='evnt',
-            response=CloudChaser.CODE_ID_EVNT,
+            response=CODE_ID_EVNT,
             decode=decode_evnt,
             handle=self.handle_evnt
         )
 
         self.add(
             name='uart',
-            code=CloudChaser.CODE_ID_UART,
+            code=CODE_ID_UART,
             encode=lambda data: data,
             decode=lambda data: [data],
-            response=CloudChaser.CODE_ID_UART,
+            response=CODE_ID_UART,
             handle=self.handle_uart
         )
 
         self.add(
             name='rainbow',
-            code=CloudChaser.CODE_ID_RAINBOW
+            code=CODE_ID_RAINBOW
         )
 
         self.add(
             name='led',
-            code=CloudChaser.CODE_ID_LED,
+            code=CODE_ID_LED,
             encode=lambda addr, mask, rgb: struct.pack(
                 f"<HB{len(rgb * 3)}s", addr & 0xFFFF, mask & 0xFF,
                 ''.join(chr(c) for grb in [(g, r, b) for r, g, b in rgb] for c in grb)  # Rearrange and unroll
