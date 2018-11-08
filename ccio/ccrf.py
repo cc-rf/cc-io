@@ -567,10 +567,10 @@ class CCRF:
         print(ccrf.format_status(stat), file=sys.stderr)
 
         if args.verbose:
-            print("mac: rx={}/{}/{} tx={}/{}/{} stack: rx={} tx={}".format(
+            print("mac: rx={}/{}/{} tx={}/{}/{} stack: {}".format(
                 stat.mac_stat.recv.count, stat.mac_stat.recv.size, stat.mac_stat.recv.error,
                 stat.mac_stat.send.count, stat.mac_stat.send.size, stat.mac_stat.send.error,
-                stat.mac_su_rx, stat.mac_su_tx
+                stat.mac_su_rx
             ), file=sys.stderr)
 
             print("phy: rx={}/{}/{} tx={}/{}/{} stack: {}".format(

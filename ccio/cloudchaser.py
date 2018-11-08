@@ -85,8 +85,8 @@ class CloudChaser(Serf):
         )
 
         def decode_status(data):
-            version, serial, uptime, addr, cell, rdid, phy_su, mac_su_tx, mac_su_rx, heap_free, heap_usage, data = \
-                struct.unpack(f"<IQIHBBIIIII{len(data) - 40}s", data)
+            version, serial, uptime, addr, cell, rdid, phy_su, mac_su_rx, heap_free, heap_usage, data = \
+                struct.unpack(f"<IQIHBBIIII{len(data) - 36}s", data)
 
             def decode_status_set(dat):
                 recv_count, recv_size, recv_error, dat = struct.unpack(f"<III{len(dat) - 12}s", dat)
@@ -103,7 +103,7 @@ class CloudChaser(Serf):
 
             return [adict(
                 version=version, serial=serial, uptime=uptime, addr=addr, cell=cell, rdid=rdid,
-                phy_su=phy_su, mac_su_tx=mac_su_tx, mac_su_rx=mac_su_rx,
+                phy_su=phy_su, mac_su_rx=mac_su_rx,
                 heap_free=heap_free, heap_usage=heap_usage,
                 phy_stat=phy_stat, mac_stat=mac_stat, net_stat=net_stat
             )]
