@@ -33,6 +33,8 @@ class CCRF:
     EVNT_PEER = CloudChaser.NET_EVNT_PEER
     EVNT_PEER_SET = CloudChaser.NET_EVNT_PEER_SET
     EVNT_PEER_EXP = CloudChaser.NET_EVNT_PEER_EXP
+    EVNT_PEER_OUT = CloudChaser.NET_EVNT_PEER_OUT
+    EVNT_PEER_UPD = CloudChaser.NET_EVNT_PEER_UPD
 
     device = None
     cc = None
@@ -617,11 +619,11 @@ class CCRF:
     def _command_peer(ccrf, args):
         peer_info = ccrf.peers()
 
-        print(f"     {peer_info.node:04X}: t={peer_info.time}", file=sys.stderr)
+        print(f"{peer_info.node:04X}: t={peer_info.time}", file=sys.stderr)
 
         for peer in peer_info.peers:
             print(
-                f"{peer.node:04X}/{peer.peer:04X}: t={peer.last} q={peer.lqi} r={peer.rssi}",
+                f"  {peer.node:04X}/{peer.peer:04X}: t={peer.last} q={peer.lqi} r={peer.rssi}",
                 file=sys.stderr
             )
 
@@ -636,7 +638,9 @@ class CCRF:
     def _command_monitor(ccrf, args):
         for evnt in ccrf.evnt():
             if evnt.id == CCRF.EVNT_PEER:
-                print(f"{evnt.addr:04X}: {'SET' if evnt.action == CCRF.EVNT_PEER_SET else 'EXP'}")
+                action = {0: 'SET', 1: 'EXP', 2: 'OUT', 3: 'UPD'}.get(evnt.action, evnt.action)
+
+                print(f"{evnt.addr:04X}: {action}")
             else:
                 print(f"event: {evnt.id} data={evnt.data}")
 
