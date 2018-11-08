@@ -173,7 +173,7 @@ class Serf:
 
     def _proc_thread(self):
         for handler, decode, data in self._proc_q.recv():
-            handler(*decode(data))
+            handler(decode(data))
 
     @staticmethod
     def on_frame(code, data):
@@ -208,19 +208,16 @@ class Serf:
 
 
 class WaitSync:
-    sem = None
     multi = False
-    result = []
     handle = None
     writer = None
-    done = True
+    q = None
 
     def __init__(self, handle, writer, multi):
-        self.sem = threading.Semaphore(0)
         self.handle = handle
         self.writer = writer
         self.multi = multi
-        self.result = []
+        self.q = AsyncQ()
 
         if multi:
             self.write_wait = self.write_wait_multi
@@ -233,48 +230,22 @@ class WaitSync:
 
     def __passive_wait(self):
         while 1:
-            self.write_wait()
+            for item in self.q.recv():
+                if self.handle:
+                    self.handle(item)
 
     def process(self, data):
-        if self.done:
-            print("serf: ignoring unsolicited response", file=sys.stderr)
-            return
-
-        if data is not None:
-            if not self.multi:
-                self.result = data
-                self.done = True
-            else:
-                self.result.append(data)
-
-        else:
-            self.done = True
-
-        self.sem.release()
+        self.q.send(data)
 
     def write_wait_multi(self, *args, **kwds):
-        self.result = []
-        self.done = False
         self.writer(*args, **kwds)
 
-        while 1:
-            self.sem.acquire()
-
-            result = self.result
-            self.result = []
-
-            for item in result:
-                yield self.handle(*item)
-
-            if self.done:
+        for item in self.q.recv():
+            if item is not None:
+                yield self.handle(item)
+            else:
                 break
 
     def write_wait_normal(self, *args, **kwds):
-        self.result = []
-        self.done = False
         self.writer(*args, **kwds)
-        self.sem.acquire()
-        res = self.result
-        self.result = None
-        res = self.handle(*res)
-        return res[0] if res and len(res) == 1 else res
+        return tuple(self.q.recv(once=True))[0]

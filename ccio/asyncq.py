@@ -48,7 +48,7 @@ class AsyncQ:
             return self.__send(item)
         return False
 
-    def send(self, item, timeout=None):
+    def send(self, item):
         """Send an item to the back of the queue.
         """
         raise NotImplementedError
