@@ -132,7 +132,7 @@ class CloudChaser(Serf):
             response=CloudChaser.CODE_ID_MAC_SEND
         )
 
-        def encode_send(addr, port, typ, data, mesg=False, wait=None):
+        def encode_send(addr, port, typ, data, mesg=False, wait=None, rslt=False):
             if (port & self.NET_PORT_MASK) != port:
                 raise ValueError("port uses restricted bits")
             if (typ & self.NET_PORT_MASK) != typ:
@@ -143,7 +143,7 @@ class CloudChaser(Serf):
                     f"<HHBB{len(data)}s", addr & CloudChaser.NET_ADDR_MASK,
                     port & CloudChaser.NET_PORT_MASK,
                     typ & CloudChaser.NET_TYPE_MASK,
-                    (CloudChaser.__CODE_SEND_MESG if mesg else 0) | CloudChaser.__CODE_SEND_RSLT,
+                    (CloudChaser.__CODE_SEND_RSLT if rslt else 0) | CloudChaser.__CODE_SEND_MESG if mesg else 0,
                     data
                 )
             else:
@@ -157,12 +157,16 @@ class CloudChaser(Serf):
         self.add(
             name='send',
             code=CloudChaser.CODE_ID_SEND,
-            encode=lambda addr, port, typ, data, mesg=False: encode_send(addr, port, typ, data, mesg),
+            encode=lambda addr, port, typ, data, mesg=False: encode_send(addr, port, typ, data, mesg, rslt=False),
+        )
+
+        self.add(
+            name='mesg',
+            code=CloudChaser.CODE_ID_SEND,
+            encode=lambda addr, port, typ, data: encode_send(addr, port, typ, data, mesg=True, rslt=True),
             decode=lambda data: struct.unpack("<H", data),
             response=CloudChaser.CODE_ID_SEND_DONE
         )
-
-        self.io.mesg = lambda *a, **k: self.io.send(*a, **k, mesg=True)
 
         self.add(
             name='resp',
@@ -185,7 +189,7 @@ class CloudChaser(Serf):
         self.add(
             name='trxn',
             code=CloudChaser.CODE_ID_TRXN,
-            encode=lambda addr, port, typ, wait, data: encode_send(addr, port, typ, data, True, wait),
+            encode=lambda addr, port, typ, wait, data: encode_send(addr, port, typ, data, mesg=None, wait=wait),
             decode=decode_trxn_stat,
             response=CloudChaser.CODE_ID_TRXN,
             multi=True

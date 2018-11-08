@@ -115,16 +115,16 @@ class CCRF:
         """
         self.cc.io.rainbow()
 
-    def send(self, addr, port, typ, data=b''):
+    def send(self, addr, port, typ, data=b'', mesg=False):
         """Send a simple datagram message.
 
         :param addr: Destination node address.
         :param port: Destination port number.
         :param typ: User type identifier.
         :param data: Data to send.
-        :return: Number of bytes sent if wait is True.
+        :param mesg: Request ACK (but do not wait for result).
         """
-        return self.cc.io.send(addr, port, typ, data, mesg=False)
+        return self.cc.io.send(addr, port, typ, data, mesg=mesg)
 
     def send_mac(self, typ, dest, data, addr=0, wait=True):
         """Send a MAC-layer datagram.
@@ -147,6 +147,7 @@ class CCRF:
         :param port: Destination port number.
         :param typ: User type identifier.
         :param data: Data to send.
+        :return: Number of packets ACKed.
         """
         return self.cc.io.mesg(addr, port, typ, data)
 
