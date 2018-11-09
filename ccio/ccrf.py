@@ -36,17 +36,25 @@ class CCRF:
     EVNT_PEER_OUT = CloudChaser.NET_EVNT_PEER_OUT
     EVNT_PEER_UPD = CloudChaser.NET_EVNT_PEER_UPD
 
+    CHANNEL_COUNT = CloudChaser.PHY_CHAN_COUNT
+
     device = None
     cc = None
     stats = None
 
     __addr = None
+    __cell = None
 
     __recv_q = None
     __recv_mac_q = None
     __evnt_q = None
 
     __status_last = None
+
+    __instance = {}
+
+    def __new__(cls, device, stats=None):
+        return CCRF.__instance.setdefault(device, object.__new__(cls))
 
     def __init__(self, device, stats=None):
         self.__recv_q = AsyncQ()
@@ -76,6 +84,7 @@ class CCRF:
     def __load_status(self):
         self.__status_last = self.cc.io.status()
         self.__addr = self.__status_last.addr
+        self.__cell = self.__status_last.cell
 
     def __clear_status(self):
         self.__status_last = None
@@ -105,6 +114,24 @@ class CCRF:
         if not self.__addr:
             self.__load_status()
         return self.__addr
+    
+    def cell(self):
+        """Get the device cell.
+        """
+        if not self.__cell:
+            self.__load_status()
+        return self.__cell
+
+    def cell_set(self, addr, orig, cell):
+        """Set the device cell address.
+        :param addr: Current device address.
+        :param orig: Current device cell.
+        :param cell: Desired new cell.
+        :return: Actual new cell or 0 for error.
+        """
+        rslt = self.cc.io.config_cell(addr, orig, cell)
+        self.__clear_status()
+        return rslt
 
     def addr_set(self, orig, addr):
         """Set the device address.
@@ -546,6 +573,25 @@ class CCRF:
             default=None,
             help='new device address.'
         )
+        
+        parser_cell = subparsers.add_parser('cell', help='show [and set] device cell and address.')
+        parser_cell.add_argument('-q', '--quiet', action='store_true', help='do not print anything.')
+        parser_cell.add_argument(
+            'orig',
+            nargs='?',
+            metavar="CELL:ORIG",
+            type=lambda p: tuple(int(m, 16) for m in p.split(':', 1)),
+            default=(None, None),
+            help='current device cell and address.'
+        )
+        parser_cell.add_argument(
+            'cell',
+            nargs='?',
+            metavar="CELL[:ADDR]",
+            type=lambda p: tuple(int(m, 16) for m in p.split(':', 1)) if ':' in p else (int(p, 16), None),
+            default=(None, None),
+            help='new device cell and optional new address.'
+        )
 
         parser_monitor = subparsers.add_parser('monitor', help='monitor i/o stats')
 
@@ -569,19 +615,28 @@ class CCRF:
         print(ccrf.format_status(stat), file=sys.stderr)
 
         if args.verbose:
+            print()
+
             print("mac: rx={}/{}/{} tx={}/{}/{} stack: {}".format(
                 stat.mac_stat.recv.count, stat.mac_stat.recv.size, stat.mac_stat.recv.error,
                 stat.mac_stat.send.count, stat.mac_stat.send.size, stat.mac_stat.send.error,
                 stat.mac_su_rx
-            ), file=sys.stderr)
+            ))
 
             print("phy: rx={}/{}/{} tx={}/{}/{} stack: {}".format(
                 stat.phy_stat.recv.count, stat.phy_stat.recv.size, stat.phy_stat.recv.error,
                 stat.phy_stat.send.count, stat.phy_stat.send.size, stat.phy_stat.send.error,
                 stat.phy_su
-            ), file=sys.stderr)
+            ))
 
-            print("heap: free={} usage={}".format(stat.heap_free, stat.heap_usage), file=sys.stderr)
+            print("heap: free={} usage={}".format(stat.heap_free, stat.heap_usage))
+            print()
+
+            print("channels:")
+            print("id    hop    freq (hz)    rssi    prev")
+
+            for chan in stat.chan:
+                print(f"{chan.id:02d}    {chan.id_hop:02d}     {chan.freq:>9}    {chan.rssi:>4}    {chan.rssi_prev:>4}")
 
     @staticmethod
     def _command_echo(ccrf, args):
@@ -604,16 +659,41 @@ class CCRF:
     def _command_addr(ccrf, args):
         addr = ccrf.addr()
 
-        if args.orig is not None:
-            if args.addr is None:
+        if args.orig:
+            if not args.addr:
                 raise argparse.ArgumentError("addr is required.")
 
             addr = ccrf.addr_set(args.orig, args.addr)
 
         if not args.quiet:
-            print(f"0x{addr if addr else ccrf.addr():04X}")
+            print(f"{addr if addr else ccrf.addr():04X}")
 
         exit(addr != ccrf.addr())
+
+    @staticmethod
+    def _command_cell(ccrf, args):
+        addr = ccrf.addr()
+        cell = ccrf.cell()
+
+        cell_orig, addr_orig = args.orig
+        cell_new, addr_new = args.cell
+
+        if cell_orig:
+            if not cell_new:
+                raise argparse.ArgumentError("cell is required.")
+
+            cell_new = ccrf.cell_set(addr_orig, cell_orig, cell_new)
+
+            if cell_new and cell_new != cell:
+                cell = cell_new
+
+                if addr_new:
+                    addr = ccrf.addr_set(addr_orig, addr_new)
+
+        if not args.quiet:
+            print(f"{cell if cell else ccrf.cell():02X}:{addr if addr else ccrf.addr():04X}")
+
+        exit(cell != ccrf.cell() or addr != ccrf.addr())
 
     @staticmethod
     def _command_peer(ccrf, args):

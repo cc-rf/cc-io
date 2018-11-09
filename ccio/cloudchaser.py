@@ -27,6 +27,7 @@ CODE_ID_LED = 27
 CODE_ID_RAINBOW = 29
 
 _CODE_CONFIG_ID_ADDR = 0xADD1
+_CODE_CONFIG_ID_CELL = 0xCE11
 
 _CODE_CONFIG_RSLT_OK = 1
 _CODE_CONFIG_RSLT_ERR = 0
@@ -52,6 +53,8 @@ class CloudChaser(Serf):
     NET_ADDR_BCST = 0
     NET_ADDR_MASK = 0xFFFF
     NET_ADDR_BITS = 16
+    NET_CELL_MASK = 0xFF
+    NET_CELL_BITS = 8
 
     NET_PORT_MASK = 0b1111111111  # 0x3FF, 1023
     NET_TYPE_MASK = 0b1111  # 0xF, 15
@@ -62,6 +65,8 @@ class CloudChaser(Serf):
     NMAC_SEND_STRM = 3
 
     NMAC_FLAG_MASK = ~_CODE_MAC_SEND_WAIT & 0xFF
+
+    PHY_CHAN_COUNT = 25
 
     def __init__(self, stats=None, handler=None, evnt_handler=None, mac_handler=None, uart_handler=None):
         super(CloudChaser, self).__init__()
@@ -90,24 +95,37 @@ class CloudChaser(Serf):
             version, serial, uptime, addr, cell, rdid, phy_su, mac_su_rx, heap_free, heap_usage, data = \
                 struct.unpack(f"<IQIHBBIIII{len(data) - 36}s", data)
 
-            def decode_status_set(dat):
-                recv_count, recv_size, recv_error, dat = struct.unpack(f"<III{len(dat) - 12}s", dat)
-                send_count, send_size, send_error, dat = struct.unpack(f"<III{len(dat) - 12}s", dat)
+            def decode_status_set(d):
+                recv_count, recv_size, recv_error, d = struct.unpack(f"<III{len(d) - 12}s", d)
+                send_count, send_size, send_error, d = struct.unpack(f"<III{len(d) - 12}s", d)
 
                 return adict(
                     recv=adict(count=recv_count, size=recv_size, error=recv_error),
                     send=adict(count=send_count, size=send_size, error=send_error)
-                ), dat
+                ), d
 
             phy_stat, data = decode_status_set(data)
             mac_stat, data = decode_status_set(data)
             net_stat, data = decode_status_set(data)
 
+            chan = []
+
+            for chan_id in range(CloudChaser.PHY_CHAN_COUNT):
+                freq, hop_id, rssi, rssi_prev, data = struct.unpack(f"<IHbb{len(data) - 8}s", data)
+                chan.append(adict(
+                    id=chan_id,
+                    id_hop=hop_id,
+                    freq=freq,
+                    rssi=rssi,
+                    rssi_prev=rssi_prev
+                ))
+
             return adict(
                 version=version, serial=serial, uptime=uptime, addr=addr, cell=cell, rdid=rdid,
                 phy_su=phy_su, mac_su_rx=mac_su_rx,
                 heap_free=heap_free, heap_usage=heap_usage,
-                phy_stat=phy_stat, mac_stat=mac_stat, net_stat=net_stat
+                phy_stat=phy_stat, mac_stat=mac_stat, net_stat=net_stat,
+                chan=tuple(chan)
             )
 
         self.add(
@@ -117,10 +135,17 @@ class CloudChaser(Serf):
             response=CODE_ID_STATUS
         )
 
+        def encode_config(cid, param, data=b''):
+            if isinstance(param, int):
+                return struct.pack(f"<II{len(data)}s", cid & 0xFFFFFFFF, param & 0xFFFFFFFF, data)
+
+            assert isinstance(param, (bytes, bytearray))
+            return struct.pack(f"<I4s{len(data)}s", cid & 0xFFFFFFFF, param, data)
+
         self.add(
             name='config',
             code=CODE_ID_CONFIG,
-            encode=lambda cid, param, data=b'': struct.pack(f"<II{len(data)}s", cid & 0xFFFFFFFF, param & 0xFFFFFFFF, data),
+            encode=encode_config,
             decode=lambda data: struct.unpack("<I", data)[0],
             response=CODE_ID_CONFIG_RSP
         )
@@ -128,10 +153,18 @@ class CloudChaser(Serf):
         def config_addr(orig, addr):
             return self.io.config(
                 _CODE_CONFIG_ID_ADDR,
-                ((addr & CloudChaser.NET_ADDR_MASK) << CloudChaser.NET_ADDR_BITS) | (orig & CloudChaser.NET_ADDR_MASK)
+                struct.pack("<HH", orig & CloudChaser.NET_ADDR_MASK, addr & CloudChaser.NET_ADDR_MASK)
             )
 
         self.io.config_addr = config_addr
+
+        def config_cell(addr, orig, cell):
+            return self.io.config(
+                _CODE_CONFIG_ID_CELL,
+                struct.pack("<HBB", addr & CloudChaser.NET_ADDR_MASK, orig & CloudChaser.NET_CELL_MASK, cell & CloudChaser.NET_CELL_MASK)
+            )
+
+        self.io.config_cell = config_cell
 
         def encode_send(addr, port, typ, data, mesg=False, wait=None, rslt=False):
             if (port & self.NET_PORT_MASK) != port:
@@ -296,8 +329,8 @@ class CloudChaser(Serf):
 
     @staticmethod
     def format_status(stat):
-        return "Cloud Chaser {:016X}@{:04X} up={}s rx={}/{}/{} tx={}/{}/{}".format(
-            stat.serial, stat.addr, stat.uptime // 1000,
+        return "Cloud Chaser {:016X}@{:02X}:{:04X} up={}s rx={}/{}/{} tx={}/{}/{}".format(
+            stat.serial, stat.cell, stat.addr, stat.uptime // 1000,
             stat.net_stat.recv.count, stat.net_stat.recv.size, stat.net_stat.recv.error,
             stat.net_stat.send.count, stat.net_stat.send.size, stat.net_stat.send.error
         )
