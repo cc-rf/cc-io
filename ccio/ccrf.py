@@ -684,7 +684,7 @@ class CCRF:
 
             cell_new = ccrf.cell_set(addr_orig, cell_orig, cell_new)
 
-            if cell_new and cell_new != cell:
+            if cell_new:
                 cell = cell_new
 
                 if addr_new:
