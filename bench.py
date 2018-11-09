@@ -18,7 +18,7 @@ def run(args):
     if args.receiver:
         if args.trxn:
             for mesg in ccrf.recv(port=101, typ=1):
-                ccrf.resp(mesg.addr, mesg.port, mesg.type)
+                ccrf.send(mesg.addr, mesg.port, mesg.type)
         else:
             for mesg in ccrf.recv():
                 pass
@@ -28,12 +28,12 @@ def run(args):
 
         if args.trxn:
             while 1:
-                list(ccrf.trxn(0x4BC9, port=101, typ=1, wait=20, data=data))
+                list(ccrf.trxn(0x4BD3, port=101, typ=1, wait=1000, data=data))
 
         else:
             while 1:
-                # ccrf.send_mac(CCRF.MAC_DGRM, 0x4BC9, data=data, wait=False)
-                s = ccrf.send(0x4BC9, port=101, typ=1, data=data)
+                # ccrf.send_mac(CCRF.MAC_DGRM, 0x0000, data=data, wait=False)
+                ccrf.send(0x4BD3, port=101, typ=2, data=data)
 
 
 def main():
