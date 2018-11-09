@@ -184,8 +184,9 @@ class CloudChaser(Serf):
 
         def decode_trxn_stat(data):
             addr, port, typ, data = struct.unpack(f"<HHB{len(data) - 5}s", data)
+            self.__update_stats_recv(len(data))
             # TODO: Validate/match port & type?
-            return addr, data
+            return None if not addr else (addr, data)
 
         self.add(
             name='trxn',
@@ -301,19 +302,22 @@ class CloudChaser(Serf):
             stat.net_stat.send.count, stat.net_stat.send.size, stat.net_stat.send.error
         )
 
-    def handle_mac_recv(self, mesg):
-        addr, peer, dest, size, rssi, lqi, data = mesg
-
+    def __update_stats_recv(self, size, rssi=0, lqi=0):
         if self.stats is not None:
             self.stats.lock()
             if not self.stats.recv_count:
                 self.stats.recv_time = time.time()
-    
-            self.stats.recv_size += len(data)
+
+            self.stats.recv_size += size
             self.stats.recv_count += 1
             self.stats.rssi_sum += rssi
             self.stats.lqi_sum += lqi
             self.stats.unlock()
+
+    def handle_mac_recv(self, mesg):
+        addr, peer, dest, size, rssi, lqi, data = mesg
+
+        self.__update_stats_recv(len(data), rssi, lqi)
 
         for mac_handler in self.mac_handlers:
             mac_handler(addr, peer, dest, rssi, lqi, data)
@@ -321,14 +325,7 @@ class CloudChaser(Serf):
     def handle_recv(self, mesg):
         addr, dest, port, typ, data = mesg
 
-        if self.stats is not None:
-            self.stats.lock()
-            if not self.stats.recv_count:
-                self.stats.recv_time = time.time()
-
-            self.stats.recv_size += len(data)
-            self.stats.recv_count += 1
-            self.stats.unlock()
+        self.__update_stats_recv(len(data))
 
         for handler in self.handlers:
             handler(addr, dest, port, typ, data)
