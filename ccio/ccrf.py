@@ -57,9 +57,9 @@ class CCRF:
         return CCRF.__instance.setdefault(device, object.__new__(cls))
 
     def __init__(self, device, stats=None):
-        self.__recv_q = AsyncQ()
-        self.__recv_mac_q = AsyncQ()
-        self.__evnt_q = AsyncQ()
+        self.__recv_q = AsyncQ(size=64000)
+        self.__recv_mac_q = AsyncQ(size=64000)
+        self.__evnt_q = AsyncQ(size=64000)
 
         self.device = device
 
@@ -268,17 +268,17 @@ class CCRF:
         return self.cc.io.peer()
 
     def __handle_recv(self, addr, dest, port, typ, data):
-        self.__recv_q.send(adict(
+        self.__recv_q.push(adict(
             addr=addr, dest=dest, port=port, type=typ, data=data
-        ))
+        ), timeout=0)
 
     def __handle_recv_mac(self, addr, peer, dest, rssi, lqi, data):
-        self.__recv_mac_q.send(adict(
+        self.__recv_mac_q.push(adict(
             addr=addr, peer=peer, dest=dest, rssi=rssi, lqi=lqi, data=data
-        ))
+        ), timeout=0)
 
     def __handle_evnt(self, evnt):
-        self.__evnt_q.send(evnt)
+        self.__evnt_q.push(evnt, timeout=0)
 
     @staticmethod
     def argparse_device_arg(parser):
@@ -598,7 +598,7 @@ class CCRF:
         argcomplete.autocomplete(parser)
         args = parser.parse_args()
 
-        ccrf = CCRF(args.device)
+        ccrf = CCRF(args.device, stats=sys.stderr if args.command == 'monitor' else None)
 
         try:
             command = getattr(CCRF, f"_command_{args.command}")
@@ -721,10 +721,10 @@ class CCRF:
                 action = {0: 'SET', 1: 'EXP', 2: 'OUT', 3: 'UPD'}.get(evnt.action, evnt.action)
 
                 print(f"{evnt.addr:04X}: {action}")
+
+                CCRF._command_peer(ccrf, args)
             else:
                 print(f"event: {evnt.id} data={evnt.data}")
-
-            CCRF._command_peer(ccrf, args)
 
     @staticmethod
     def _command_send(ccrf, args, *, rxtx=False):

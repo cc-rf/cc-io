@@ -27,7 +27,7 @@ class Serf:
         self._thread_input = None
         self._thread_write = None
         self._thread_proc = None
-        self._write_q = AsyncQ(size=8)
+        self._write_q = AsyncQ(size=1024)
         self._proc_q = AsyncQ()
         self.write = write
         self.port = None

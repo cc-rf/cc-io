@@ -18,6 +18,18 @@ class AsyncQ:
         else:
             self.send = self.__send
 
+    def push(self, item, timeout=0):
+        """Push an item onto the end, removing oldest if needed.
+        :param item: Item to queue.
+        :param timeout: Time to wait, cannot be None.
+        :return: Success of the send after pop.
+        """
+        assert timeout is not None
+        if not self.send(item, timeout=timeout):
+            tuple(self.recv(once=True, timeout=0))
+            return self.send(item, timeout=0)
+        return True
+
     def recv(self, once=False, timeout=None):
         """Receive a queued item.
         :param once: Stop iterating after first item.
