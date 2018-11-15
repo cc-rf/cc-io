@@ -5,26 +5,25 @@
 import sys
 import os
 import time
+import random
 import argparse
 import argcomplete
 from ccio.ccrf import CCRF
 
 
-def run(args):
-    ccrf = CCRF(args.device, stats=sys.stderr)
-
+def run(ccrf, args):
     ccrf.print_status()
 
     if not args.addr:
         if args.trxn:
             for mesg in ccrf.recv(port=101, typ=1):
-                ccrf.resp(mesg.addr, mesg.port, mesg.type)
+                ccrf.resp(mesg.addr, mesg.port, mesg.type, mesg.data)
         else:
             for mesg in ccrf.recv():
                 pass
 
     else:
-        data = b'a' * CCRF.MTU
+        data = b'a' * CCRF.MTU * (round(CCRF.MTU * .8) * 3)
 
         if args.trxn:
             while 1:
@@ -32,8 +31,8 @@ def run(args):
 
         else:
             while 1:
-                # ccrf.send_mac(CCRF.MAC_STRM, 0x0000, data=data, wait=False)
-                ccrf.send(args.addr, port=101, typ=2, data=data)
+                # data = bytes(random.randint(0, 255) for _ in range(random.randint(0, CCRF.MTU)))
+                ccrf.send(args.addr, port=101, typ=2, data=data, mesg=True, wait=False)
 
 
 def main():
@@ -45,7 +44,9 @@ def main():
     args = parser.parse_args()
 
     try:
-        run(args)
+        with CCRF(args.device, stats=sys.stderr) as ccrf:
+            run(ccrf, args)
+
     except KeyboardInterrupt:
         exit("")
 

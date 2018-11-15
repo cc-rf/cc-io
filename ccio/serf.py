@@ -28,6 +28,7 @@ class Serf:
         self._thread_write = None
         self._thread_proc = None
         self._write_q = AsyncQ(size=1024)
+        self._write_e = threading.Event()
         self._proc_q = AsyncQ()
         self.write = write
         self.port = None
@@ -70,26 +71,36 @@ class Serf:
         if (code & Serf.SERF_CODE_M) != code:
             print("warning: code 0x{:02X} truncated to 0x{:02X}".format(code, code & Serf.SERF_CODE_M), file=sys.stderr)
 
+        size = cobs.cobs_encode(struct.pack("<BI", 0xFF, len(data))) + b'\0' if len(data) else b''
+
         frame = struct.pack(f"<B{len(data)}s", Serf.SERF_CODE_PROTO_VAL | (code & Serf.SERF_CODE_M), data)
-        frame = cobs.cobs_encode(frame)
-        frame.append(0)
+        frame = size + cobs.cobs_encode(frame) + b'\0'
+        # frame = cobs.cobs_encode(frame) + b'\0'
+
         return frame
 
     @staticmethod
     def decode(data):
-        if len(data) <= 1:
+        in_len = len(data)
+
+        # print(f"raw:", len(data), ' '.join(f"{v:02X}" for v in data))
+
+        if in_len <= 1:
+            print(f"serf: data too small ({in_len})", file=sys.stderr)
             return Serf.SERF_DECODE_ERROR
 
         data = cobs.cobs_decode(data)
 
-        if not len(data):
-            print("serf: empty data", file=sys.stderr)
+        if len(data) < 1:
+            print(f"serf: decoded too small ({in_len}->{len(data)})", file=sys.stderr)
             return Serf.SERF_DECODE_ERROR
+
+        # print(f"decoded:", len(data), ' '.join(f"{v:02X}" for v in data))
 
         code = data[0]
 
         if (code & Serf.SERF_CODE_PROTO_M) != Serf.SERF_CODE_PROTO_VAL:
-            print("serf: bad proto val", file=sys.stderr)
+            print(f"serf: bad code 0x{code:02X}", file=sys.stderr)
             return Serf.SERF_DECODE_ERROR
 
         return code & Serf.SERF_CODE_M, data[1:]
@@ -106,22 +117,17 @@ class Serf:
         self.serial.baudrate = baud
         self.serial.open()
 
-        self._thread_input = threading.Thread(target=self._input_thread)
-        self._thread_input.setDaemon(True)
+        self._thread_input = threading.Thread(target=self._input_thread, daemon=True)
         self._thread_input.start()
 
-        self._thread_write = threading.Thread(target=self._write_thread)
-        self._thread_write.setDaemon(True)
+        self._thread_write = threading.Thread(target=self._write_thread, daemon=True)
         self._thread_write.start()
 
-        self._thread_proc = threading.Thread(target=self._proc_thread)
-        self._thread_proc.setDaemon(True)
+        self._thread_proc = threading.Thread(target=self._proc_thread, daemon=True)
         self._thread_proc.start()
 
     def close(self):
-        self.serial.close()
-        # self.join()
-        self._thread_input = None
+        self.join()
 
     def reopen(self):
         self.serial.timeout = .25
@@ -133,14 +139,33 @@ class Serf:
         self.open(self.serial.port, self.serial.baudrate)
 
     def join(self, timeout=None):
+        # time.sleep(0.001)
+
         if self._thread_input is None or not self._thread_input.isAlive():
             return True
 
-        self._thread_input.join(timeout)
-        return not self._thread_input.isAlive()
+        if self._thread_proc:
+            self._proc_q.send(None)
+            self._thread_proc.join(timeout)
+            self._thread_proc = None
+
+        if self._thread_write:
+            self._write_q.send(None)
+            self._thread_write.join(timeout)
+            self._thread_write = None
+
+        self.serial.close()
+
+        self._thread_input = None
+
+        return not self._thread_write.isAlive() if self._thread_write else True
+
+    def flush(self):
+        self._write_q.send((None, b'\0\0'))
 
     def _write(self, code, data):
         if self.serial is not None:
+            # self.flush()
             self._write_q.send((code, data))
 
         elif self.write is not None:
@@ -149,12 +174,20 @@ class Serf:
             print("no output method: code=0x{:02X} len={}".format(code, len(data)), file=sys.stderr)
 
     def _write_thread(self):
-        for code, data in self._write_q.recv():
+        for qi in self._write_q.recv():
+            if qi is None:
+                break
+
+            code, data = qi
+
             try:
-                self.serial.write(Serf.encode(code, data))
+                self.serial.write(Serf.encode(code, data) if code is not None else data)
 
                 if not self.serial.isOpen():
                     break
+
+                # self.serial.flush()
+
             except IOError:
                 continue
 
@@ -163,7 +196,7 @@ class Serf:
             if cmd.response == code:
                 break
         else:
-            warn(f"received unknown command code 0x{code:02X}")
+            print(f"unknown code 0x{code:02X}", file=sys.stderr)
             return
 
         if hasattr(cmd, 'sync'):
@@ -172,7 +205,13 @@ class Serf:
             self._proc_q.send((cmd.handler, cmd.decode, data))
 
     def _proc_thread(self):
-        for handler, decode, data in self._proc_q.recv():
+        for qi in self._proc_q.recv():
+
+            if qi is None:
+                break
+
+            handler, decode, data = qi
+
             handler(decode(data))
 
     @staticmethod

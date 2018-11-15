@@ -50,6 +50,8 @@ class CloudChaser(Serf):
 
     NET_BASE_SIZE = 113
 
+    NET_SEND_MAX = 0xFFFA
+
     NET_ADDR_BCST = 0
     NET_ADDR_MASK = 0xFFFF
     NET_ADDR_BITS = 16
@@ -82,7 +84,7 @@ class CloudChaser(Serf):
             code=CODE_ID_ECHO,
             encode=lambda mesg: struct.pack(f"<{len(mesg) + 1}s", mesg + b'\x00'),
             decode=lambda data: str(data, 'ascii'),
-            handle=lambda mesg: sys.stdout.write(mesg)
+            response=CODE_ID_ECHO
         )
 
         self.add(
@@ -177,7 +179,7 @@ class CloudChaser(Serf):
                     f"<HHBB{len(data)}s", addr & CloudChaser.NET_ADDR_MASK,
                     port & CloudChaser.NET_PORT_MASK,
                     typ & CloudChaser.NET_TYPE_MASK,
-                    (_CODE_SEND_RSLT if rslt else 0) | _CODE_SEND_MESG if mesg else 0,
+                    (_CODE_SEND_RSLT if rslt else 0) | (_CODE_SEND_MESG if mesg else 0),
                     data
                 )
             else:
@@ -189,18 +191,25 @@ class CloudChaser(Serf):
                 )
 
         self.add(
-            name='send',
+            name='send_nowait',
             code=CODE_ID_SEND,
             encode=lambda addr, port, typ, data, mesg=False: encode_send(addr, port, typ, data, mesg, rslt=False),
         )
 
         self.add(
-            name='mesg',
+            name='send_wait',
             code=CODE_ID_SEND,
-            encode=lambda addr, port, typ, data: encode_send(addr, port, typ, data, mesg=True, rslt=True),
+            encode=lambda addr, port, typ, data, mesg=False: encode_send(addr, port, typ, data, mesg, rslt=True),
             decode=lambda data: struct.unpack("<H", data)[0],
             response=CODE_ID_SEND_DONE
         )
+
+        self.io.send = lambda addr, port, typ, data, mesg=False, wait=False: \
+            self.io.send_nowait(addr, port, typ, data, mesg) if not wait else \
+            self.io.send_wait(addr, port, typ, data, mesg)
+
+        self.io.mesg = lambda addr, port, typ, data, wait=True: \
+            self.io.send(addr, port, typ, data, mesg=True, wait=wait)
 
         self.add(
             name='resp',

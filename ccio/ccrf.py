@@ -30,6 +30,8 @@ class CCRF:
 
     MTU = CloudChaser.NET_BASE_SIZE
 
+    SEND_MAX = CloudChaser.NET_SEND_MAX
+
     EVNT_PEER = CloudChaser.NET_EVNT_PEER
     EVNT_PEER_SET = CloudChaser.NET_EVNT_PEER_SET
     EVNT_PEER_EXP = CloudChaser.NET_EVNT_PEER_EXP
@@ -74,7 +76,17 @@ class CCRF:
             evnt_handler=self.__handle_evnt
         )
 
-        self.cc.open(device)
+    def __enter__(self):
+        self.open()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+
+    def open(self):
+        """Open the serial connection.
+        """
+        self.cc.open(self.device)
 
     def close(self):
         """Close the serial connection to the device.
@@ -158,41 +170,43 @@ class CCRF:
         """
         self.cc.io.rainbow()
 
-    def send(self, addr, port, typ, data=b'', mesg=False):
+    def send(self, addr, port, typ, data=b'', mesg=False, wait=False):
         """Send a simple datagram message.
 
         :param addr: Destination node address.
         :param port: Destination port number.
         :param typ: User type identifier.
         :param data: Data to send.
-        :param mesg: Request ACK (but do not wait for result).
+        :param mesg: Request ACK.
+        :param wait: Wait for tx done (or ACK if mesg).
         """
-        return self.cc.io.send(addr, port, typ, data, mesg=mesg)
+        return self.cc.io.send(addr, port, typ, data, mesg, wait)
 
-    def send_mac(self, typ, dest, data, addr=0, wait=True):
+    def send_mac(self, typ, dest, data, node=0, wait=False):
         """Send a MAC-layer datagram.
 
         :param typ: MAC message type: CCRF.MAC_DGRM, CCRF.MAC_MESG, or CCRF.MAC_STRM.
         :param dest: Destination node address.
         :param data: Data to send.
-        :param addr: Source address (0 for default).
+        :param node: Source address (0 for default).
         :param wait: Wait until TX complete to return.
         """
         if wait:
-            return self.cc.io.mac_send_wait(typ, dest, data, addr)
+            return self.cc.io.mac_send_wait(typ, dest, data, node)
 
-        return self.cc.io.mac_send(typ, dest, data, addr)
+        return self.cc.io.mac_send(typ, dest, data, node)
 
-    def mesg(self, addr, port, typ, data=b''):
+    def mesg(self, addr, port, typ, data=b'', wait=True):
         """Send a message and await ACK.
 
         :param addr: Destination node address.
         :param port: Destination port number.
         :param typ: User type identifier.
         :param data: Data to send.
+        :param wait: Wait for ACK (default true).
         :return: Number of packets ACKed.
         """
-        return self.cc.io.mesg(addr, port, typ, data)
+        return self.cc.io.mesg(addr, port, typ, data, wait)
 
     def evnt(self, once=False, timeout=None):
         """Receive events.
@@ -558,6 +572,7 @@ class CCRF:
         )
 
         parser_addr = subparsers.add_parser('addr', help='show [and set] device address.')
+        parser_addr.add_argument('-c', '--cell', action='store_true', help='include cell in output.')
         parser_addr.add_argument('-q', '--quiet', action='store_true', help='do not print anything.')
         parser_addr.add_argument(
             'orig',
@@ -595,19 +610,18 @@ class CCRF:
 
         parser_monitor = subparsers.add_parser('monitor', help='monitor i/o stats')
 
+        parser_flush = subparsers.add_parser('flush', help='flush device input buffer')
+
         argcomplete.autocomplete(parser)
         args = parser.parse_args()
 
-        ccrf = CCRF(args.device, stats=sys.stderr if args.command == 'monitor' else None)
-
         try:
-            command = getattr(CCRF, f"_command_{args.command}")
-            command(ccrf, args)
+            with CCRF(args.device, stats=sys.stderr if args.command == 'monitor' else None) as ccrf:
+                command = getattr(CCRF, f"_command_{args.command}")
+                command(ccrf, args)
+
         except KeyboardInterrupt:
-            sys.stderr.write(os.linesep)
-        finally:
-            time.sleep(0.00001)
-            ccrf.close()
+            exit(os.linesep)
 
     @staticmethod
     def _command_status(ccrf, args):
@@ -646,9 +660,14 @@ class CCRF:
                 ccrf.echo(sys.stdin.read())
 
         else:
-            ccrf.echo(args.data)
+            print(ccrf.echo(args.data))
 
-        time.sleep(0.001)
+        time.sleep(0.100)
+
+    @staticmethod
+    def _command_flush(ccrf, args):
+        ccrf.cc.flush()
+        time.sleep(0.100)
 
     @staticmethod
     def _command_rainbow(ccrf, args):
@@ -666,7 +685,10 @@ class CCRF:
             addr = ccrf.addr_set(args.orig, args.addr)
 
         if not args.quiet:
-            print(f"{addr if addr else ccrf.addr():04X}")
+            if args.cell:
+                print(f"{ccrf.cell():02X}:{addr if addr else ccrf.addr():04X}")
+            else:
+                print(f"{addr if addr else ccrf.addr():04X}")
 
         exit(addr != ccrf.addr())
 
@@ -745,13 +767,15 @@ class CCRF:
                 print(f"{args.input}: splitting {size} bytes into 16K chunks", file=sys.stderr)
                 args.split = 16384
 
-        send = ccrf.send if not args.mesg else ccrf.mesg
         result = 0
 
         path = args.path_dest if rxtx else args.path
 
         for data in args.data:
-            result += send(args.dest, path[0], path[1], data)
+            rslt = ccrf.send(args.dest, path[0], path[1], data, mesg=args.mesg, wait=True)
+
+            if type(rslt) is int:
+                result += rslt
 
         if args.verbose and not args.input and not args.data:
             return done("warning: nothing sent")
@@ -768,12 +792,13 @@ class CCRF:
                 data = read(args.split)
 
                 if data:
-                    sent = send(args.dest, path[0], path[1], data)
+                    sent = ccrf.send(args.dest, path[0], path[1], data, mesg=args.mesg, wait=args.mesg)
 
                     if args.verbose:
                         CCRF.__print_mesg(ccrf.addr(), args.dest, path[0], path[1], data)
 
-                    result += sent
+                    if type(sent) is int:
+                        result += sent
                 else:
                     break
 
@@ -798,13 +823,16 @@ class CCRF:
                     if mesg.dest == CloudChaser.NET_ADDR_BCST:
                         if args.no_bcast:
                             continue
-                    elif args.bcast or mesg.dest != ccrf.addr():
+                    elif args.bcast and mesg.dest != CCRF.ADDR_BCST:
                         continue
 
                     if args.source and mesg.addr != args.source:
                         continue
 
                     write(mesg.data)
+
+                    if args.mesg_newline and out is sys.stdout:
+                        out.write(os.linesep)
 
                     if args.flush:
                         out.flush()
