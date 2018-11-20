@@ -22,6 +22,7 @@ from .asyncq import AsyncQ
 
 class CCRF:
     ADDR_BCST = CloudChaser.NET_ADDR_BCST
+    ADDR_NONE = CloudChaser.NET_ADDR_INVL
 
     MAC_FLAG_MASK = CloudChaser.NMAC_FLAG_MASK
 
@@ -166,10 +167,10 @@ class CCRF:
 
         return self.cc.io.echo(data)
 
-    def rainbow(self):
-        """Flashes the onboard RGB LEDs in a rainbow pattern.
+    def rainbow(self, addr=ADDR_NONE):
+        """Flashes the onboard RGB LEDs in a rainbow pattern, optionally remotely.
         """
-        self.cc.io.rainbow()
+        self.cc.io.rainbow(addr)
 
     def update(self, size_header, size_user, size_code, size_text, size_data, bin_data):
         """Update device flash.
@@ -337,6 +338,14 @@ class CCRF:
 
         parser_rainbow = subparsers.add_parser('rainbow', aliases=['rbow'], help='display rainbow')
         CCRF._command_rbow = CCRF._command_rainbow
+
+        parser_rainbow.add_argument(
+            'addr',
+            nargs='?',
+            type=lambda p: int(p, 16),
+            default=CCRF.ADDR_NONE,
+            help='device address to make flash.'
+        )
 
         parser_peer = subparsers.add_parser('peer', help='print peer table')
 
@@ -727,7 +736,7 @@ class CCRF:
 
     @staticmethod
     def _command_rainbow(ccrf, args):
-        ccrf.rainbow()
+        ccrf.rainbow(args.addr)
         time.sleep(0.1)
 
     @staticmethod

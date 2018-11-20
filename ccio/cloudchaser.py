@@ -57,6 +57,7 @@ class CloudChaser(Serf):
     NET_ADDR_BCST = 0
     NET_ADDR_MASK = 0xFFFF
     NET_ADDR_BITS = 16
+    NET_ADDR_INVL = NET_ADDR_MASK
     NET_CELL_MASK = 0xFF
     NET_CELL_BITS = 8
 
@@ -315,7 +316,8 @@ class CloudChaser(Serf):
 
         self.add(
             name='rainbow',
-            code=CODE_ID_RAINBOW
+            code=CODE_ID_RAINBOW,
+            encode=lambda addr=CloudChaser.NET_ADDR_INVL: struct.pack("<H", addr & CloudChaser.NET_ADDR_MASK)
         )
 
         self.add(
