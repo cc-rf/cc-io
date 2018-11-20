@@ -5,6 +5,7 @@ alternative to the cloudchaser module.
 """
 import sys
 import os
+import re
 import time
 import argparse
 import argcomplete
@@ -169,6 +170,19 @@ class CCRF:
         """Flashes the onboard RGB LEDs in a rainbow pattern.
         """
         self.cc.io.rainbow()
+
+    def update(self, size_header, size_user, size_code, size_text, size_data, bin_data):
+        """Update device flash.
+
+        :param size_header: Flash header size (interrupts + ram).
+        :param size_user: User data ROM section size (max 4K).
+        :param size_code: Fast code ROM section size.
+        :param size_text: Text (ROM code) section size.
+        :param size_data: Data ROM section size.
+        :param bin_data: All the data.
+        :return: Integer, zero on success.
+        """
+        return self.cc.io.updt(size_header, size_user, size_code, size_text, size_data, bin_data)
 
     def send(self, addr, port, typ, data=b'', mesg=False, wait=False):
         """Send a simple datagram message.
@@ -612,6 +626,20 @@ class CCRF:
 
         parser_flush = subparsers.add_parser('flush', help='flush device input buffer')
 
+        parser_update = subparsers.add_parser('update', aliases=['up'], help='flash new firmware')
+        CCRF._command_up = CCRF._command_update
+
+        default_update_path = os.path.relpath(
+            os.path.abspath(os.path.join(os.path.dirname(__file__), "../../build/release")),
+            os.getcwd()
+        )
+
+        parser_update.add_argument(
+            '-p', '--path',
+            default=default_update_path,
+            help=f"path to firmware package files: default={default_update_path}"
+        )
+
         argcomplete.autocomplete(parser)
         args = parser.parse_args()
 
@@ -668,6 +696,34 @@ class CCRF:
     def _command_flush(ccrf, args):
         ccrf.cc.flush()
         time.sleep(0.100)
+
+    @staticmethod
+    def _command_update(ccrf, args):
+        sizes = open(os.path.join(args.path, "fw.siz")).read()
+
+        size_interrupts = int(re.findall(r"^\.interrupts\s+(\d+).+$", sizes, flags=re.MULTILINE)[0])
+        size_config = int(re.findall(r"^\.flash_config\s+(\d+).+$", sizes, flags=re.MULTILINE)[0])
+        size_user = int(re.findall(r"^\.user_rom\s+(\d+).+$", sizes, flags=re.MULTILINE)[0])
+        size_code = int(re.findall(r"^\.fast_code\s+(\d+).+$", sizes, flags=re.MULTILINE)[0])
+        size_text = int(re.findall(r"^\.text\s+(\d+).+$", sizes, flags=re.MULTILINE)[0])
+        size_data = int(re.findall(r"^\.data\s+(\d+).+$", sizes, flags=re.MULTILINE)[0])
+
+        size_total = size_interrupts + size_config + size_user + size_code + size_text + size_data
+
+        bin_file = os.path.join(args.path, "fw.bin")
+        bin_file_size = os.path.getsize(bin_file)
+
+        if bin_file_size != size_total:
+            print(f"update: bin size of {bin_file_size} doesn't match section sizes ({size_total})!")
+            exit(-1)
+
+        bin_data = open(bin_file, 'rb').read()
+
+        rslt = ccrf.update(size_interrupts + size_config, size_user, size_code, size_text, size_data, bin_data)
+
+        if rslt == 0:
+            print("update successful, closing.", file=sys.stderr)
+            ccrf.close()
 
     @staticmethod
     def _command_rainbow(ccrf, args):

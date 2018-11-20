@@ -22,6 +22,8 @@ CODE_ID_RESP = 8
 CODE_ID_EVNT = 9
 CODE_ID_PEER = 10
 CODE_ID_RESET = 17
+CODE_ID_FLASH = 21
+CODE_ID_FLASH_STAT = 21
 CODE_ID_UART = 26
 CODE_ID_LED = 27
 CODE_ID_RAINBOW = 29
@@ -314,6 +316,15 @@ class CloudChaser(Serf):
         self.add(
             name='rainbow',
             code=CODE_ID_RAINBOW
+        )
+
+        self.add(
+            name='updt',
+            code=CODE_ID_FLASH,
+            encode=lambda size_header, size_user, size_code, size_text, size_data, bin_data:
+                struct.pack(f"<IIIII{len(bin_data)}s", size_header, size_user, size_code, size_text, size_data, bin_data),
+            decode=lambda data: struct.unpack("<i", data)[0],
+            response=CODE_ID_FLASH_STAT
         )
 
         self.add(
