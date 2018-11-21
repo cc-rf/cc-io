@@ -3,6 +3,7 @@
 import sys
 import struct
 import time
+from datetime import datetime
 
 from .serf import Serf
 from .util import adict
@@ -97,8 +98,8 @@ class CloudChaser(Serf):
         )
 
         def decode_status(data):
-            version, serial, uptime, addr, cell, rdid, phy_su, mac_su_rx, heap_free, heap_usage, data = \
-                struct.unpack(f"<IQIHBBIIII{len(data) - 36}s", data)
+            version, date, serial, uptime, addr, cell, rdid, phy_su, mac_su_rx, heap_free, heap_usage, data = \
+                struct.unpack(f"<IIQIHBBIIII{len(data) - 40}s", data)
 
             def decode_status_set(d):
                 recv_count, recv_size, recv_error, d = struct.unpack(f"<III{len(d) - 12}s", d)
@@ -126,7 +127,8 @@ class CloudChaser(Serf):
                 ))
 
             return adict(
-                version=version, serial=serial, uptime=uptime, addr=addr, cell=cell, rdid=rdid,
+                version=version, date=date, serial=serial,
+                uptime=uptime, addr=addr, cell=cell, rdid=rdid,
                 phy_su=phy_su, mac_su_rx=mac_su_rx,
                 heap_free=heap_free, heap_usage=heap_usage,
                 phy_stat=phy_stat, mac_stat=mac_stat, net_stat=net_stat,
@@ -351,8 +353,9 @@ class CloudChaser(Serf):
 
     @staticmethod
     def format_status(stat):
-        return "Cloud Chaser {:016X}@{:02X}:{:04X} up={}s rx={}/{}/{} tx={}/{}/{}".format(
-            stat.serial, stat.cell, stat.addr, stat.uptime // 1000,
+        stat_date = datetime.fromtimestamp(stat.date).astimezone().strftime('%Y-%m-%d-%H:%M')
+        return "Cloud Chaser {:08x} {} {:016X}@{:02X}:{:04X} up={}s rx={}/{}/{} tx={}/{}/{}".format(
+            stat.version, stat_date, stat.serial, stat.cell, stat.addr, stat.uptime // 1000,
             stat.net_stat.recv.count, stat.net_stat.recv.size, stat.net_stat.recv.error,
             stat.net_stat.send.count, stat.net_stat.send.size, stat.net_stat.send.error
         )
