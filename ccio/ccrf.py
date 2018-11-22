@@ -296,6 +296,18 @@ class CCRF:
         """
         return self.cc.io.peer()
 
+    def ping(self, addr, timeout=100, size=0, size_resp=0, stream=False):
+        """Ping another device.
+
+        :param addr: Address to ping (cannot be broadcast, use trxn instead).
+        :param timeout: Timeout in milliseconds.
+        :param size: Size of ping packet.
+        :param size_resp: Size of ping reply packet.
+        :param stream: Send stream packets (no CCA).
+        :return: adict{addr, rtt_usec, meta{locl{rssi, lqi}, peer{rssi, lqi}}}
+        """
+        return self.cc.io.ping(addr, timeout, size, size_resp, strm=stream)
+
     def __handle_recv(self, addr, dest, port, typ, data):
         self.__recv_q.push(adict(
             addr=addr, dest=dest, port=port, type=typ, data=data
@@ -649,6 +661,76 @@ class CCRF:
             help=f"path to firmware package files: default={default_update_path}"
         )
 
+        parser_ping = subparsers.add_parser('ping', help='ping remote device')
+
+        parser_ping.add_argument(
+            'addr',
+            type=lambda a: int(a, 16),
+            help='device address to ping.'
+        )
+
+        parser_ping.add_argument(
+            '-t', '--timeout',
+            metavar='<ms>',
+            type=int,
+            default=1000,
+            help="timeout in ms (default: 1000)."
+        )
+
+        parser_ping.add_argument(
+            '-d', '--delay',
+            metavar='<ms>',
+            type=int,
+            default=1000,
+            help="time in between pings (default: 1000ms)."
+        )
+
+        parser_ping.add_argument(
+            '-c', '--count',
+            metavar='#',
+            type=int,
+            default=1,
+            help="ping count (default: 1)."
+        )
+
+        parser_ping.add_argument(
+            '-f', '--forever',
+            action='store_true',
+            default=False,
+            help="shorthand for --count=0."
+        )
+
+        parser_ping.add_argument(
+            '-st', '--stream',
+            action='store_true',
+            default=False,
+            help="send stream packets (no CCA)."
+        )
+
+        parser_ping.add_argument(
+            '-s', '--size',
+            metavar='<sz>',
+            type=int,
+            default=0,
+            help="ping packet size (default: 0)."
+        )
+
+        parser_ping.add_argument(
+            '-r', '--size-repl',
+            metavar='<sz>',
+            type=int,
+            default=0,
+            help="reply packet size (default: 0)."
+        )
+
+        parser_ping.add_argument(
+            '-S', '--size-both',
+            metavar='<sz>',
+            type=int,
+            default=0,
+            help="short for -s=<sz> -r=<sz>."
+        )
+
         argcomplete.autocomplete(parser)
         args = parser.parse_args()
 
@@ -793,6 +875,49 @@ class CCRF:
                 f"  {peer.node:04X}/{peer.peer:04X}: t={peer.last} q={peer.lqi} r={peer.rssi}",
                 file=sys.stderr
             )
+
+    @staticmethod
+    def _command_ping(ccrf, args):
+        if args.addr == CCRF.ADDR_NONE or args.addr == CCRF.ADDR_BCST:
+            exit("invalid address.")
+
+        if args.forever:
+            args.count = 0
+        elif args.count == 0:
+            args.forever = True
+
+        if args.size_both:
+            args.size = args.size_repl = args.size_both
+
+        while args.forever or args.count:
+            print(f"ping {args.addr:04X}{('    sz: ' + str(args.size)) if args.size else ''}", end='')
+            sys.stdout.flush()
+
+            rslt = ccrf.ping(args.addr, args.timeout, args.size, args.size_repl, stream=args.stream)
+
+            if rslt.tx_count != 1:
+                print(f"/{rslt.tx_count}", end='')
+
+            print(f"    ", end='')
+
+            if rslt.rtt_usec:
+                rsiq = f"{rslt.meta.locl.rssi}/{rslt.meta.locl.lqi}"
+                priq = f"{rslt.meta.peer.rssi}/{rslt.meta.peer.lqi}"
+                stat = f"rsiq: {rsiq:<7}  priq: {priq:<7}  rtt: {rslt.rtt_usec}us    "
+
+                if args.size_repl:
+                    stat += f"sz: {args.size_repl}"
+
+            else:
+                stat = "fail."
+
+            print(stat)
+
+            if (not args.forever) and args.count:
+                args.count -= 1
+
+            if args.delay and (args.forever or args.count):
+                time.sleep(args.delay / 1000.0)
 
     @staticmethod
     def __print_mesg(addr, dest, port, typ, data):

@@ -22,6 +22,8 @@ CODE_ID_TRXN = 7
 CODE_ID_RESP = 8
 CODE_ID_EVNT = 9
 CODE_ID_PEER = 10
+CODE_ID_PING = 22
+CODE_ID_PING_RSLT = 22
 CODE_ID_RESET = 17
 CODE_ID_FLASH = 21
 CODE_ID_FLASH_STAT = 21
@@ -288,6 +290,28 @@ class CloudChaser(Serf):
             code=CODE_ID_PEER,
             decode=decode_peer,
             response=CODE_ID_PEER
+        )
+
+        def decode_ping(data):
+            addr, tx_count, rtt_usec, rssi_locl, lqi_locl, rssi_peer, lqi_peer = struct.unpack("<HHIbBbB", data)
+
+            return adict(
+                addr=addr,
+                tx_count=tx_count,
+                rtt_usec=rtt_usec,
+                meta=adict(
+                    locl=adict(rssi=rssi_locl, lqi=lqi_locl),
+                    peer=adict(rssi=rssi_peer, lqi=lqi_peer)
+                )
+            )
+
+        self.add(
+            name='ping',
+            code=CODE_ID_PING,
+            encode=lambda addr, timeout=100, size=0, size_resp=0, strm=False:
+                struct.pack("<HIHHB", addr & CloudChaser.NET_ADDR_MASK, timeout, size, size_resp, int(strm)),
+            decode=decode_ping,
+            response=CODE_ID_PING_RSLT
         )
 
         def decode_evnt(data):
