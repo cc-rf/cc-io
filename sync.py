@@ -14,9 +14,7 @@ from pickle import loads, dumps
 from ccio.ccrf import CCRF
 
 
-def run(args):
-    ccrf = CCRF(args.device)
-
+def run(ccrf, args):
     ccrf.print_status()
 
     if not args.addr:
@@ -78,7 +76,8 @@ def main():
     args = parser.parse_args()
 
     try:
-        run(args)
+        with CCRF(args.device) as ccrf:
+            run(ccrf, args)
     except KeyboardInterrupt:
         exit("")
 
