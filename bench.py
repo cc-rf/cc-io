@@ -18,13 +18,13 @@ def run(ccrf, args):
         if args.trxn:
             for mesg in ccrf.recv(port=101, typ=1):
                 data = bytes(random.randint(0, 255) for _ in range(random.randint(0, CCRF.MTU*2)))
-                ccrf.send(mesg.addr, mesg.port, mesg.type, data)
+                ccrf.resp(mesg.addr, mesg.port, mesg.type, data)
         else:
             for mesg in ccrf.recv():
                 pass
 
     else:
-        data = b'a' * CCRF.MTU * 2
+        data = b'a' * CCRF.MTU * 500
 
         if args.trxn:
             while 1:

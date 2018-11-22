@@ -233,7 +233,8 @@ class CloudChaser(Serf):
 
         def decode_trxn_stat(data):
             addr, port, typ, data = struct.unpack(f"<HHB{len(data) - 5}s", data)
-            self.__update_stats_recv(len(data))
+            if addr:
+                self.__update_stats_recv(len(data))
             # TODO: Validate/match port & type?
             return None if not addr else (addr, data)
 
