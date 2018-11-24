@@ -177,9 +177,10 @@ class CCRF:
         """
         self.cc.io.rainbow(addr)
 
-    def update(self, size_header, size_user, size_code, size_text, size_data, bin_data):
+    def update(self, size_total, size_header, size_user, size_code, size_text, size_data, bin_data):
         """Update device flash.
 
+        :param size_total: Total size of the flash data.
         :param size_header: Flash header size (interrupts + ram).
         :param size_user: User data ROM section size (max 4K).
         :param size_code: Fast code ROM section size.
@@ -188,7 +189,15 @@ class CCRF:
         :param bin_data: All the data.
         :return: Integer, zero on success.
         """
-        return self.cc.io.updt(size_header, size_user, size_code, size_text, size_data, bin_data)
+        return self.cc.io.updt(size_total, size_header, size_user, size_code, size_text, size_data, bin_data)
+
+    def fota(self, addr):
+        """Flash current firmware over the air to another device.
+
+        :param addr: Address to send firmware.
+        :return: True if apparent success (all data sent).
+        """
+        return self.cc.io.fota(addr)
 
     def send(self, addr, port, typ, data=b'', mesg=False, wait=False):
         """Send a simple datagram message.
@@ -685,6 +694,14 @@ class CCRF:
 
         parser_reset = subparsers.add_parser('reset', help='reset the device')
 
+        parser_fota = subparsers.add_parser('fota', help='flash over the air')
+
+        parser_fota.add_argument(
+            'addr',
+            type=lambda p: int(p, 16),
+            help='address to send current firmware.'
+        )
+
         parser_update = subparsers.add_parser('update', aliases=['up'], help='flash new firmware')
         CCRF._command_up = CCRF._command_update
 
@@ -831,6 +848,16 @@ class CCRF:
         time.sleep(0.100)
 
     @staticmethod
+    def _command_fota(ccrf, args):
+        if args.addr == CCRF.ADDR_NONE or args.addr == CCRF.ADDR_BCST:
+            exit("invalid address.")
+
+        if ccrf.fota(args.addr):
+            print("fota: sent.")
+        else:
+            print("fota: fail.")
+
+    @staticmethod
     def _command_update(ccrf, args):
         sizes = open(os.path.join(args.path, "fw.siz")).read()
 
@@ -852,7 +879,7 @@ class CCRF:
 
         bin_data = open(bin_file, 'rb').read()
 
-        rslt = ccrf.update(size_interrupts + size_config, size_user, size_code, size_text, size_data, bin_data)
+        rslt = ccrf.update(size_total, size_interrupts + size_config, size_user, size_code, size_text, size_data, bin_data)
 
         if rslt == 0:
             print("update successful, closing.", file=sys.stderr)
