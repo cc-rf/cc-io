@@ -411,6 +411,21 @@ class CCRF:
             default=[],
             help='data to send (before input if given, otherwise -I implied).'
         )
+        parser_send.add_argument(
+            '-l', '--tx-lines',
+            action="store_true",
+            help='add newline after each -tx.'
+        )
+        parser_send.add_argument(
+            '-L', '--tx-line',
+            action="store_true",
+            help='newline after last -tx.'
+        )
+        parser_send.add_argument(
+            '-ei', '--exec-in',
+            type=lambda p: [pi.strip() for pi in p.split()],
+            help='execute program and pipe stdout over rf.'
+        )
 
         parser_recv = subparsers.add_parser('recv', help='receive data')
         parser_recv.add_argument('-v', '--verbose', action='store_true', help='verbose output')
@@ -453,14 +468,14 @@ class CCRF:
             help='start timeout clock after first receive.'
         )
         parser_recv.add_argument(
-            '-n', '--newline',
+            '-n', '--mesg-newline',
             action="store_true",
-            help='newline at end of stdout.'
+            help='newline after each message on output.'
         )
         parser_recv.add_argument(
-            '-N', '--mesg-newline',
+            '-N', '--newline',
             action="store_true",
-            help='newline after each message on stdout.'
+            help='newline at end of output.'
         )
         parser_recv.add_argument(
             '-r', '--respond',
@@ -479,10 +494,15 @@ class CCRF:
             help='append to output file.'
         )
         parser_recv.add_argument(
-            '-f', '--flush',
+            '-F', '--no-flush',
             action="store_true",
             default=False,
-            help='flush output on each receive.'
+            help='do not flush output on each receive.'
+        )
+        parser_recv.add_argument(
+            '-eo', '--exec-out',
+            type=lambda p: [pi.strip() for pi in p.split()],
+            help='execute program and pipe to stdin from rf.'
         )
 
         parser_rxtx = subparsers.add_parser('rxtx', help='send and receive data')
@@ -543,14 +563,14 @@ class CCRF:
             help='start timeout clock after first receive.'
         )
         parser_rxtx.add_argument(
-            '-n', '--newline',
+            '-n', '--mesg-newline',
             action="store_true",
-            help='newline at end of stdout.'
+            help='newline after each message on ouptut.'
         )
         parser_rxtx.add_argument(
-            '-N', '--mesg-newline',
+            '-N', '--newline',
             action="store_true",
-            help='newline after each message on stdout.'
+            help='newline at end of output.'
         )
         parser_rxtx.add_argument(
             '-S', '--split',
@@ -579,9 +599,10 @@ class CCRF:
             help='append to output file.'
         )
         parser_rxtx.add_argument(
-            '-f', '--flush',
+            '-F', '--no-flush',
             action="store_true",
-            help='flush output on each receive.'
+            default=False,
+            help='do not flush output on each receive.'
         )
         parser_rxtx.add_argument(
             '-tx', '--data',
@@ -589,6 +610,16 @@ class CCRF:
             action='append',
             default=[],
             help='data to send (before input if given, otherwise -I implied).'
+        )
+        parser_rxtx.add_argument(
+            '-l', '--tx-lines',
+            action="store_true",
+            help='add newline after each -tx.'
+        )
+        parser_rxtx.add_argument(
+            '-L', '--tx-line',
+            action="store_true",
+            help='newline after last -tx.'
         )
         parser_rxtx.add_argument(
             '-e', '--exec',
@@ -678,7 +709,7 @@ class CCRF:
         )
 
         parser_ping.add_argument(
-            '-d', '--delay',
+            '-i', '--interval',
             metavar='<ms>',
             type=int,
             default=1000,
@@ -916,8 +947,8 @@ class CCRF:
             if (not args.forever) and args.count:
                 args.count -= 1
 
-            if args.delay and (args.forever or args.count):
-                time.sleep(args.delay / 1000.0)
+            if args.interval and (args.forever or args.count):
+                time.sleep(args.interval / 1000.0)
 
     @staticmethod
     def __print_mesg(addr, dest, port, typ, data):
@@ -945,12 +976,24 @@ class CCRF:
         else:
             done = exit
 
+        if args.exec_in:
+            if args.input != sys.stdin or args.no_input:
+                raise ValueError("cannot specify input when using pipe")
+
+            spi = subprocess.Popen(
+                args=args.exec_in, executable=args.exec_in[0],
+                stdin=sys.stdin, stdout=subprocess.PIPE,
+                stderr=sys.stderr
+            )
+
+            args.input = spi.stdout
+
         if args.mesg and not args.dest:
             return done("error: mesg requires destination")
 
         if args.no_input:
             args.input = None
-        elif args.input != sys.stdin:
+        elif type(args.input) is str:
             size = os.path.getsize(args.input)
 
             if size > 16384 and args.split < 0:
@@ -962,6 +1005,9 @@ class CCRF:
         path = args.path_dest if rxtx else args.path
 
         for data in args.data:
+            if (args.tx_lines or (args.tx_line and data == args.data[-1])) and not data.endswith(bytes(os.linesep, 'ascii')):
+                data += bytes(os.linesep, 'ascii')
+
             rslt = ccrf.send(args.dest, path[0], path[1], data, mesg=args.mesg, wait=True)
 
             if type(rslt) is int:
@@ -970,7 +1016,7 @@ class CCRF:
         if args.verbose and not args.input and not args.data:
             return done("warning: nothing sent")
 
-        if args.input == sys.stdin and args.data:
+        if not args.input or (args.input == sys.stdin and args.data):
             return done(result)
 
         inf = open(args.input, 'rb') if isinstance(args.input, str) else args.input
@@ -999,6 +1045,19 @@ class CCRF:
 
     @staticmethod
     def _command_recv(ccrf, args):
+
+        if args.exec_out:
+            if args.out != sys.stdout:
+                raise ValueError("cannot specify output when using pipe")
+
+            spo = subprocess.Popen(
+                args=args.exec_out, executable=args.exec_out[0],
+                stdin=subprocess.PIPE, stdout=sys.stdout,
+                stderr=sys.stderr
+            )
+
+            args.out = spo.stdin
+
         out = open(args.out, 'w+b' if args.append else 'wb') if isinstance(args.out, str) else args.out
 
         write = out.buffer.write if hasattr(out, 'buffer') else out.write
@@ -1019,19 +1078,19 @@ class CCRF:
                     if args.source and mesg.addr != args.source:
                         continue
 
+                    if args.mesg_newline and not mesg.data.endswith(bytes(os.linesep, 'ascii')):
+                        mesg.data += bytes(os.linesep, 'ascii')
+
                     write(mesg.data)
 
-                    if args.mesg_newline and out is sys.stdout:
-                        out.write(os.linesep)
-
-                    if args.flush:
+                    if not args.no_flush:
                         out.flush()
 
                     if args.verbose:
                         CCRF.__print_mesg(mesg.addr, mesg.dest, mesg.port, mesg.type, mesg.data)
 
                     if args.respond:
-                        if not args.flush:
+                        if args.no_flush:
                             out.flush()
 
                         data = bytes(sys.stdin.read())
@@ -1055,10 +1114,10 @@ class CCRF:
                         break
 
         finally:
-            if out is sys.stdout and args.newline:
-                out.write(os.linesep)
+            if args.newline:
+                write(bytes(os.linesep, 'ascii'))
 
-                if args.flush:
+                if not args.no_flush:
                     out.flush()
 
             out.close()
@@ -1075,6 +1134,9 @@ class CCRF:
             if args.input != sys.stdin or args.out != sys.stdout:
                 raise ValueError("cannot specify input or output files when using pipe")
 
+            if args.exec_in or args.exec_out:
+                raise ValueError("cannot specify -ei or -eo with -e.")
+
             sp = subprocess.Popen(
                 args=args.exec, executable=args.exec[0],
                 stdin=subprocess.PIPE, stdout=subprocess.PIPE,
@@ -1083,26 +1145,6 @@ class CCRF:
 
             args.input = sp.stdout
             args.out = sp.stdin
-        else:
-            if args.input != sys.stdin:
-                raise ValueError("cannot specify input files when using input pipe")
-
-            if args.exec_in:
-                spi = subprocess.Popen(
-                    args=args.exec_in, executable=args.exec_in[0],
-                    stdout=subprocess.PIPE, stderr=sys.stderr
-                )
-
-                args.input = spi.stdout
-
-            if args.exec_out:
-                spi = subprocess.Popen(
-                    args=args.exec_out, executable=args.exec_out[0],
-                    stdin=subprocess.PIPE, stdout=sys.stdout,
-                    stderr=sys.stderr
-                )
-
-                args.out = spi.stdin
 
         def run_send():
             rslt = CCRF._command_send(ccrf, args, rxtx=True)

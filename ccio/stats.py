@@ -91,12 +91,6 @@ class Stats:
         try:
             self.run()
 
-        except KeyboardInterrupt:
-            sys.exit(0)
-
-        except SystemExit:
-            sys.exit(0)
-
         except:
             traceback.print_exc()
             sys.exit(1)
