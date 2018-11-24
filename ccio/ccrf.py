@@ -95,6 +95,11 @@ class CCRF:
         """
         self.cc.close()
 
+    def reset(self, reopen=False):
+        """Reset and optionally re-open the device.
+        """
+        return self.cc.reset(reopen=reopen)
+
     def __load_status(self):
         self.__status_last = self.cc.io.status()
         self.__addr = self.__status_last.addr
@@ -678,6 +683,8 @@ class CCRF:
 
         parser_flush = subparsers.add_parser('flush', help='flush device input buffer')
 
+        parser_reset = subparsers.add_parser('reset', help='reset the device')
+
         parser_update = subparsers.add_parser('update', aliases=['up'], help='flash new firmware')
         CCRF._command_up = CCRF._command_update
 
@@ -796,8 +803,7 @@ class CCRF:
             print("heap: free={} usage={}".format(stat.heap_free, stat.heap_usage))
             print()
 
-            print("channels:")
-            print("id    hop    freq (hz)    rssi    prev")
+            print("chan  hop    freq (hz)    rssi    prev")
 
             for chan in stat.chan:
                 print(f"{chan.id:02d}    {chan.id_hop:02d}     {chan.freq:>9}    {chan.rssi:>4}    {chan.rssi_prev:>4}")
@@ -817,6 +823,11 @@ class CCRF:
     @staticmethod
     def _command_flush(ccrf, args):
         ccrf.cc.flush()
+        time.sleep(0.100)
+
+    @staticmethod
+    def _command_reset(ccrf, args):
+        ccrf.reset(reopen=False)
         time.sleep(0.100)
 
     @staticmethod

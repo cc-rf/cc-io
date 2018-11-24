@@ -24,7 +24,11 @@ def run(ccrf, args):
                 pass
 
     else:
-        data = b'a' * CCRF.MTU * 500
+        # The max number of mac packets that can be sent in 40ms, with 1 MTU = 2.64ms, is technically 15.
+        # However, measurement shows that 12 yields a receive rate of 25 (net) packets per second,
+        #   or one per channel.
+
+        data = b'a' * CCRF.MTU * 12
 
         if args.trxn:
             while 1:
