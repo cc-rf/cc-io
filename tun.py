@@ -18,7 +18,7 @@ def run(ccrf, tun, args):
     ccrf.print_status()
 
     def recv():
-        for mesg in ccrf.recv(port=TUN_PORT, typ=TUN_TYPE):
+        for mesg in ccrf.recv(addr=args.addr, dest=ccrf.addr(), port=TUN_PORT, typ=TUN_TYPE):
             tun.write(mesg.data)
 
     Thread(target=recv, daemon=True).start()

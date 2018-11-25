@@ -244,9 +244,11 @@ class CCRF:
         """
         return self.__evnt_q.recv(once, timeout)
 
-    def recv(self, port=None, typ=None, once=False, timeout=None):
+    def recv(self, addr=None, dest=None, port=None, typ=None, once=False, timeout=None):
         """Receive messages (iterator).
 
+        :param addr: filter by address.
+        :param dest: filter by destination (this device or broadcast).
         :param port: filter by port.
         :param typ: filter by type.
         :param once: finish receiving after one message.
@@ -254,6 +256,12 @@ class CCRF:
         :return: iterator that receives once or forever.
         """
         for mesg in self.__recv_q.recv(once=False, timeout=timeout):
+
+            if addr is not None and mesg.addr != addr:
+                continue
+
+            if dest is not None and mesg.dest != dest:
+                continue
 
             if port is not None and mesg.port != port:
                 continue
