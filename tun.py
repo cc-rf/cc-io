@@ -23,12 +23,13 @@ def run(ccrf, tun, args):
     def recv():
         for mesg in ccrf.recv(port=TUN_PORT, typ=TUN_TYPE):
             tun.write(mesg.data)
+            ccrf.resp(mesg.addr, mesg.port, mesg.typ)
 
     Thread(target=recv, daemon=True).start()
 
     while 1:
         data = tun.read()
-        ccrf.mesg(args.addr, TUN_PORT, TUN_TYPE, data)
+        ccrf.trxn(args.addr, port=TUN_PORT, typ=TUN_TYPE, data=data, wait=1000)
 
 
 def main():
