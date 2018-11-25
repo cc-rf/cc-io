@@ -1,11 +1,8 @@
 #!/usr/bin/env python3
 # PYTHON_ARGCOMPLETE_OK
-"""Packet throughput benchmarking.
+"""Point-to-point IP-over-RF tunnel.
 """
 import sys
-import os
-import time
-import random
 import argparse
 import argcomplete
 from threading import Thread
@@ -23,26 +20,24 @@ def run(ccrf, tun, args):
     def recv():
         for mesg in ccrf.recv(port=TUN_PORT, typ=TUN_TYPE):
             tun.write(mesg.data)
-            ccrf.resp(mesg.addr, mesg.port, mesg.typ)
 
     Thread(target=recv, daemon=True).start()
 
     while 1:
         data = tun.read()
-        ccrf.trxn(args.addr, port=TUN_PORT, typ=TUN_TYPE, data=data, wait=1000)
+        ccrf.mesg(args.addr, port=TUN_PORT, typ=TUN_TYPE, data=data, wait=True)
 
 
 def main():
     parser = argparse.ArgumentParser(prog="bench")
     CCRF.argparse_device_arg(parser)
-    parser.add_argument('tun', help='tunnel device name')
     parser.add_argument('net', help='tunnel network address')
     parser.add_argument('addr', type=lambda p: int(p, 16), help='tunnel endpoint address')
     argcomplete.autocomplete(parser)
     args = parser.parse_args()
 
     try:
-        with TapDevice(name=args.tun, mode=TapMode.Tap) as tun:
+        with TapDevice(name="cctun", mode=TapMode.Tun) as tun:
             tun.ifconfig(address=args.net)
 
             with CCRF(args.device, stats=sys.stderr) as ccrf:
