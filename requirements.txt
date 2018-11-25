@@ -1,2 +1,3 @@
 pyserial
 argcomplete
+pytap2

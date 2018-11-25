@@ -11,7 +11,6 @@ import argparse
 import argcomplete
 import threading
 import subprocess
-import traceback
 
 from . import util
 from .util import adict
@@ -926,6 +925,7 @@ class CCRF:
                 cell = cell_new
 
                 if addr_new:
+                    time.sleep(0.100)
                     addr = ccrf.addr_set(addr_orig, addr_new)
 
         if not args.quiet:
