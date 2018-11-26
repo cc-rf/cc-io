@@ -99,6 +99,11 @@ class CCRF:
         """
         return self.cc.reset(reopen=reopen)
 
+    def reboot(self, addr=ADDR_NONE):
+        """Reboot a remote device (or local).
+        """
+        return self.cc.io.reboot(addr)
+
     def __load_status(self):
         self.__status_last = self.cc.io.status()
         self.__addr = self.__status_last.addr
@@ -701,6 +706,16 @@ class CCRF:
 
         parser_reset = subparsers.add_parser('reset', help='reset the device')
 
+        parser_reboot = subparsers.add_parser('reboot', help='reboot remote device')
+
+        parser_reboot.add_argument(
+            'addr',
+            type=lambda a: int(a, 16),
+            nargs='?',
+            default=CCRF.ADDR_NONE,
+            help='device address to reboot.'
+        )
+
         parser_fota = subparsers.add_parser('fota', help='flash over the air')
 
         parser_fota.add_argument(
@@ -852,6 +867,11 @@ class CCRF:
     @staticmethod
     def _command_reset(ccrf, args):
         ccrf.reset(reopen=False)
+        time.sleep(0.100)
+
+    @staticmethod
+    def _command_reboot(ccrf, args):
+        ccrf.reboot(args.addr)
         time.sleep(0.100)
 
     @staticmethod

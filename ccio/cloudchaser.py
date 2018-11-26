@@ -24,7 +24,7 @@ CODE_ID_EVNT = 9
 CODE_ID_PEER = 10
 CODE_ID_PING = 22
 CODE_ID_PING_RSLT = 22
-CODE_ID_RESET = 17
+CODE_ID_REBOOT = 17
 CODE_ID_FLASH = 21
 CODE_ID_FLASH_STAT = 21
 CODE_ID_FOTA = 23
@@ -96,9 +96,9 @@ class CloudChaser(Serf):
         )
 
         self.add(
-            name='reset',
-            code=CODE_ID_RESET,
-            encode=lambda: struct.pack("<I", _RESET_MAGIC)
+            name='reboot',
+            code=CODE_ID_REBOOT,
+            encode=lambda addr=CloudChaser.NET_ADDR_INVL: struct.pack("<HI", addr & CloudChaser.NET_ADDR_MASK, _RESET_MAGIC)
         )
 
         def decode_status(data):
@@ -382,7 +382,7 @@ class CloudChaser(Serf):
         return "cc@{}".format(self.port)
 
     def reset(self, reopen=True):
-        self.io.reset()
+        self.io.reboot()
 
         if reopen:
             self.reopen()
