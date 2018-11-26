@@ -943,13 +943,16 @@ class CCRF:
 
     @staticmethod
     def _command_peer(ccrf, args):
+        ccrf.print_status()
+        print(file=sys.stderr)
+
         peer_info = ccrf.peers()
 
-        print(f"{peer_info.node:04X}: t={peer_info.time}", file=sys.stderr)
-
         for peer in peer_info.peers:
+            vi = f"  v: {peer.version:<08x}@{CloudChaser.format_date(peer.date)}  t: {str(peer.time) + 's':<7}" if peer.time else ""
+
             print(
-                f"  {peer.node:04X}/{peer.peer:04X}: t={peer.last} q={peer.lqi} r={peer.rssi}",
+                f"{peer.peer:04X}{vi}  l: {peer.last:<2}   q: {peer.lqi:<2}  r: {peer.rssi:<4}",
                 file=sys.stderr
             )
 

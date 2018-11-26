@@ -281,10 +281,10 @@ class CloudChaser(Serf):
 
             peers = []
 
-            while len(data) >= 10:
-                addri, peer, last, rssi, lqi, data = struct.unpack(f"<HHIbB{len(data) - 10}s", data)
-                # TODO: This is a good place for collections.namedtuple?
-                peers.append(adict(node=addri, peer=peer, last=last, rssi=rssi, lqi=lqi))
+            while len(data) >= 20:
+                peer, rssi, lqi, last, vers, date, time, data = struct.unpack(f"<HbBIIII{len(data) - 20}s", data)
+
+                peers.append(adict(peer=peer, last=last, rssi=rssi, lqi=lqi, version=vers, date=date, time=time))
 
             return adict(node=addr, time=now, peers=peers)
 
@@ -390,8 +390,12 @@ class CloudChaser(Serf):
             self.close()
 
     @staticmethod
+    def format_date(stat_date):
+        return datetime.fromtimestamp(stat_date).astimezone().strftime('%Y-%m-%d-%H:%M')
+
+    @staticmethod
     def format_status(stat):
-        stat_date = datetime.fromtimestamp(stat.date).astimezone().strftime('%Y-%m-%d-%H:%M')
+        stat_date = CloudChaser.format_date(stat.date)
         return "Cloud Chaser {:08x} {} {:016X}@{:02X}:{:04X} up={}s rx={}/{}/{} tx={}/{}/{}".format(
             stat.version, stat_date, stat.serial, stat.cell, stat.addr, stat.uptime // 1000,
             stat.net_stat.recv.count, stat.net_stat.recv.size, stat.net_stat.recv.error,
