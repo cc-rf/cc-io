@@ -282,9 +282,9 @@ class CloudChaser(Serf):
             peers = []
 
             while len(data) >= 20:
-                peer, rssi, lqi, last, vers, date, time, data = struct.unpack(f"<HbBIIII{len(data) - 20}s", data)
+                addr, rssi, lqi, last, vers, date, time, data = struct.unpack(f"<HbBIIII{len(data) - 20}s", data)
 
-                peers.append(adict(peer=peer, last=last, rssi=rssi, lqi=lqi, version=vers, date=date, time=time))
+                peers.append(adict(addr=addr, last=last, rssi=rssi, lqi=lqi, version=vers, date=date, time=time))
 
             return adict(node=addr, time=now, peers=peers)
 
@@ -391,12 +391,12 @@ class CloudChaser(Serf):
 
     @staticmethod
     def format_date(stat_date):
-        return datetime.fromtimestamp(stat_date).astimezone().strftime('%Y-%m-%d-%H:%M')
+        return datetime.fromtimestamp(stat_date).astimezone().strftime('%Y-%m-%d.%H:%M')
 
     @staticmethod
     def format_status(stat):
         stat_date = CloudChaser.format_date(stat.date)
-        return "Cloud Chaser {:08x} {} {:016X}@{:02X}:{:04X} up={}s rx={}/{}/{} tx={}/{}/{}".format(
+        return "Cloud Chaser {:08x}.{} {:016X}@{:02X}:{:04X} up={}s rx={}/{}/{} tx={}/{}/{}".format(
             stat.version, stat_date, stat.serial, stat.cell, stat.addr, stat.uptime // 1000,
             stat.net_stat.recv.count, stat.net_stat.recv.size, stat.net_stat.recv.error,
             stat.net_stat.send.count, stat.net_stat.send.size, stat.net_stat.send.error

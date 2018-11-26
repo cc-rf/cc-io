@@ -121,10 +121,10 @@ class CCRF:
         """
         return CloudChaser.format_status(self.status() if not status else status)
 
-    def print_status(self, status=None, file=sys.stderr):
+    def print_status(self, status=None, file=sys.stderr, end=os.linesep*2):
         """Shortcut to [retrieve and] print current status.
         """
-        print(self.format_status(status), file=file)
+        print(self.format_status(status), file=file, end=end)
 
     def addr(self):
         """Get the device network address.
@@ -313,7 +313,7 @@ class CCRF:
 
         Includes all advertised known peer associations.
 
-        :return: adict{node, time, peers=adict{node, peer, last, rssi, lqi}}.
+        :return: adict{node, time, peers=adict{addr, last, rssi, lqi, version, date, time}}.
         """
         return self.cc.io.peer()
 
@@ -705,8 +705,8 @@ class CCRF:
 
         parser_fota.add_argument(
             'addr',
-            type=lambda p: int(p, 16),
-            help='address to send current firmware.'
+            type=lambda p: int(p, 16) if p.lower() != "auto" else "auto",
+            help='address to send current firmware, or "auto" to bring all peers up to date.'
         )
 
         parser_update = subparsers.add_parser('update', aliases=['up'], help='flash new firmware')
@@ -855,14 +855,42 @@ class CCRF:
         time.sleep(0.100)
 
     @staticmethod
-    def _command_fota(ccrf, args):
+    def _command_fota(ccrf, args, peer=None):
+        stat = ccrf.status()
+
+        if not peer:
+            ccrf.print_status(stat)
+
+        if args.addr is "auto":
+            for peer in ccrf.peers().peers:
+                if peer.last < 30 and peer.date < stat.date:
+                    args.addr = peer.addr
+                    CCRF._command_fota(ccrf, args, peer)
+            return
+
         if args.addr == CCRF.ADDR_NONE or args.addr == CCRF.ADDR_BCST:
             exit("invalid address.")
 
+        print(f"fota: {args.addr:04x} ... ", end='')
+
+        sys.stdout.flush()
+
+        if peer is None:
+            peers = tuple(filter(lambda p: p.addr == args.addr, ccrf.peers().peers))
+
+            if len(peers) != 1:
+                exit("peer not found.")
+
+            peer = peers[0]
+
+        print(f"{peer.version:08x}@{CloudChaser.format_date(peer.date)} -> {stat.version:08x}@{CloudChaser.format_date(stat.date)} ... ", end='')
+
+        sys.stdout.flush()
+
         if ccrf.fota(args.addr):
-            print("fota: sent.")
+            print("sent.")
         else:
-            print("fota: fail.")
+            print("fail.")
 
     @staticmethod
     def _command_update(ccrf, args):
@@ -944,15 +972,14 @@ class CCRF:
     @staticmethod
     def _command_peer(ccrf, args):
         ccrf.print_status()
-        print(file=sys.stderr)
 
         peer_info = ccrf.peers()
 
         for peer in peer_info.peers:
-            vi = f"  v: {peer.version:<08x}@{CloudChaser.format_date(peer.date)}  t: {str(peer.time) + 's':<7}" if peer.time else ""
+            vi = f"  v: {peer.version:08x}.{CloudChaser.format_date(peer.date)}  t: {str(peer.time) + 's':<7}" if peer.time else ""
 
             print(
-                f"{peer.peer:04X}{vi}  l: {peer.last:<2}   q: {peer.lqi:<2}  r: {peer.rssi:<4}",
+                f"{peer.addr:04X}{vi}  l: {peer.last:<2}   q: {peer.lqi:<2}  r: {peer.rssi:<4}",
                 file=sys.stderr
             )
 
