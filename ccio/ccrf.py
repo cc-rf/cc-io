@@ -7,6 +7,7 @@ import sys
 import os
 import re
 import time
+import pyudev
 import argparse
 import argcomplete
 import threading
@@ -87,11 +88,68 @@ class CCRF:
     def open(self):
         """Open the serial connection.
         """
-        self.cc.open(self.device)
+        device = self.device
+
+        if ":" in device or len(device) == 16:
+            cell = None
+            addr = None
+            serial = None
+
+            if ":" in device:
+                parts = device.split(":")
+
+                if len(parts) != 2 or len(parts[0]) and not len(parts[1]):
+                    raise ValueError("must specify device address as <cell: | :><addr>")
+
+                cell = int(parts[0], 16) if len(parts[0]) else None
+                addr = int(parts[1], 16)
+            else:
+                serial = device
+
+            context = pyudev.Context()
+
+            for dev in context.list_devices(subsystem='tty', ID_BUS='usb', ID_VENDOR=0xcccc, ID_PRODUCT=0xcccc):
+                # Cannot trust the descriptor address here, if it changed the usb driver probably hasn't reloaded to reflect.
+
+                device = dev.properties['DEVNAME']
+
+                if serial is not None:
+                    dev_serial = dev.properties['ID_SERIAL_SHORT']
+
+                    rslt = re.findall(r"_([0-9a-fA-F]{16})", dev_serial)
+
+                    if not rslt or not len(rslt):
+                        continue
+
+                    if rslt[0] == serial:
+                        break
+
+                    continue
+
+                try:
+                    self.cc.open(device)
+
+                    if addr == self.addr() and (cell is None or cell == self.cell()):
+                        self.device_path = device
+                        return
+
+                    self.close()
+
+                except (BlockingIOError, IOError) as err:
+
+                    self.close()
+
+            else:
+                raise ValueError(f"device not matched: serial={serial} cell={cell} addr={addr}")
+
+        self.device_path = device
+
+        self.cc.open(device)
 
     def close(self):
         """Close the serial connection to the device.
         """
+        self.__clear_status()
         self.cc.close()
 
     def reset(self, reopen=False):
@@ -349,9 +407,30 @@ class CCRF:
 
     @staticmethod
     def argparse_device_arg(parser):
+        def parse_device(d):
+            if d.startswith('/'):
+                return d
+
+            if ":" in d:
+                parts = d.split(":")
+
+                if len(parts) != 2 or len(parts[0]) and not len(parts[1]):
+                    raise ValueError("must specify device address as <cell: | :><addr>")
+
+            elif len(d) <= 3:
+                if not d.isdecimal():
+                    raise ValueError("device tty id must be a decimal number")
+
+                d = f"/dev/ttyACM{int(d)}"
+
+            elif len(d) != 16 or not d.isalnum():
+                raise ValueError("device serial must be a 16-bit hex number")
+
+            return d
+
         return parser.add_argument(
             '-d', '--device', metavar='DEV', help='serial device or acm tty number',
-            type=lambda p: p if p.startswith('/') else f"/dev/ttyACM{int(p)}",
+            type=parse_device,
             **util.arg_env_or_req('CCRF_DEV')
         )
 

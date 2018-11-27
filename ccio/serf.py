@@ -4,6 +4,7 @@ import sys
 import struct
 import time
 import threading
+import fcntl
 from warnings import warn
 
 from . import cobs
@@ -117,6 +118,8 @@ class Serf:
         self.serial.baudrate = baud
         self.serial.open()
 
+        fcntl.flock(self.serial.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+
         self._thread_input = threading.Thread(target=self._input_thread, daemon=True)
         self._thread_input.start()
 
@@ -141,9 +144,6 @@ class Serf:
     def join(self, timeout=None):
         # time.sleep(0.001)
 
-        if self._thread_input is None or not self._thread_input.isAlive():
-            return True
-
         if self._thread_proc:
             self._proc_q.send(None)
             self._thread_proc.join(timeout)
@@ -154,7 +154,9 @@ class Serf:
             self._thread_write.join(timeout)
             self._thread_write = None
 
-        self.serial.close()
+        if self.serial is not None:
+            self.serial.close()
+            self.serial = None
 
         self._thread_input = None
 
