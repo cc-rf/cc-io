@@ -43,6 +43,7 @@ class CCRF:
     CHANNEL_COUNT = CloudChaser.PHY_CHAN_COUNT
 
     device = None
+    device_path = None
     cc = None
     stats = None
 
@@ -85,12 +86,19 @@ class CCRF:
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.close()
 
+    @staticmethod
+    def devices():
+        context = pyudev.Context()
+
+        for dev in context.list_devices(subsystem='tty', ID_BUS='usb', ID_VENDOR=0xcccc, ID_PRODUCT=0xcccc):
+            yield dev
+
     def open(self):
         """Open the serial connection.
         """
         device = self.device
 
-        if ":" in device or len(device) == 16:
+        if ":" in device or len(device) == 16 or device == "any":
             cell = None
             addr = None
             serial = None
@@ -103,12 +111,10 @@ class CCRF:
 
                 cell = int(parts[0], 16) if len(parts[0]) else None
                 addr = int(parts[1], 16)
-            else:
+            elif device != "any":
                 serial = device
 
-            context = pyudev.Context()
-
-            for dev in context.list_devices(subsystem='tty', ID_BUS='usb', ID_VENDOR=0xcccc, ID_PRODUCT=0xcccc):
+            for dev in CCRF.devices():
                 # Cannot trust the descriptor address here, if it changed the usb driver probably hasn't reloaded to reflect.
 
                 device = dev.properties['DEVNAME']
@@ -129,17 +135,18 @@ class CCRF:
                 try:
                     self.cc.open(device)
 
-                    if addr == self.addr() and (cell is None or cell == self.cell()):
+                    if addr is None or (addr == self.addr() and (cell is None or cell == self.cell())):
                         self.device_path = device
                         return
 
                     self.close()
 
-                except (BlockingIOError, IOError) as err:
-
+                except (BlockingIOError, IOError):
                     self.close()
 
             else:
+                addr = f"{addr:04X}" if addr is not None else None
+                cell = f"{cell:02X}" if cell is not None else None
                 raise ValueError(f"device not matched: serial={serial} cell={cell} addr={addr}")
 
         self.device_path = device
@@ -417,6 +424,9 @@ class CCRF:
                 if len(parts) != 2 or len(parts[0]) and not len(parts[1]):
                     raise ValueError("must specify device address as <cell: | :><addr>")
 
+            elif d == "any":
+                return d
+
             elif len(d) <= 3:
                 if not d.isdecimal():
                     raise ValueError("device tty id must be a decimal number")
@@ -431,7 +441,7 @@ class CCRF:
         return parser.add_argument(
             '-d', '--device', metavar='DEV', help='serial device or acm tty number',
             type=parse_device,
-            **util.arg_env_or_req('CCRF_DEV')
+            **util.arg_env_or_none('CCRF_DEV')
         )
 
     @staticmethod
@@ -464,7 +474,9 @@ class CCRF:
             help='device address to make flash.'
         )
 
-        parser_peer = subparsers.add_parser('peer', help='print peer table')
+        subparsers.add_parser('devices', aliases=['lsd'], help='display list of attached devices')
+
+        subparsers.add_parser('peer', help='print peer table')
 
         def valid_split(s):
             s = int(s)
@@ -779,11 +791,11 @@ class CCRF:
             help='new device cell and optional new address.'
         )
 
-        parser_monitor = subparsers.add_parser('monitor', help='monitor i/o stats')
+        subparsers.add_parser('monitor', help='monitor i/o stats')
 
-        parser_flush = subparsers.add_parser('flush', help='flush device input buffer')
+        subparsers.add_parser('flush', help='flush device input buffer')
 
-        parser_reset = subparsers.add_parser('reset', help='reset the device')
+        subparsers.add_parser('reset', help='reset the device')
 
         parser_reboot = subparsers.add_parser('reboot', help='reboot remote device')
 
@@ -891,9 +903,19 @@ class CCRF:
         args = parser.parse_args()
 
         try:
+            if args.command in ('devices', 'lsd'):
+                return CCRF._command_devices(args)
+
+            if args.device is None:
+                args.device = "any"
+                # exit("device is required.")
+
             with CCRF(args.device, stats=sys.stderr if args.command == 'monitor' else None) as ccrf:
                 command = getattr(CCRF, f"_command_{args.command}")
                 command(ccrf, args)
+
+        except Exception as exc:
+            exit(exc)
 
         except KeyboardInterrupt:
             exit(os.linesep)
@@ -1023,6 +1045,14 @@ class CCRF:
     def _command_rainbow(ccrf, args):
         ccrf.rainbow(args.addr)
         time.sleep(0.1)
+
+    @staticmethod
+    def _command_devices(args):
+        for dev in CCRF.devices():
+            serial = dev.properties['ID_SERIAL_SHORT'].replace('_', ' ')
+            device = os.path.basename(dev.properties['DEVNAME'])
+
+            print(f"{device}: {serial}")
 
     @staticmethod
     def _command_addr(ccrf, args):
