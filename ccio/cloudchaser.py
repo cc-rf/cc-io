@@ -5,7 +5,7 @@ import struct
 import time
 from datetime import datetime
 
-from .serf import Serf
+from .serf import Serf, SerfClient, SerfServer
 from .util import adict
 
 
@@ -47,7 +47,7 @@ _CODE_MAC_SEND_WAIT = 1
 _RESET_MAGIC = 0xD1E00D1E
 
 
-class CloudChaser(Serf):
+class CloudChaser:
 
     NET_EVNT_PEER = 0
     NET_EVNT_PEER_SET = 0
@@ -77,9 +77,20 @@ class CloudChaser(Serf):
     NMAC_FLAG_MASK = ~_CODE_MAC_SEND_WAIT & 0xFF
 
     PHY_CHAN_COUNT = 25
+    
+    serf = None
 
-    def __init__(self, stats=None, handler=None, evnt_handler=None, mac_handler=None, uart_handler=None):
-        super(CloudChaser, self).__init__()
+    def __init__(self, server=None, stats=None, handler=None, evnt_handler=None, mac_handler=None, uart_handler=None):
+        self.server = server
+
+        if self.server is True:
+            self.serf = SerfServer()
+        elif self.server is False:
+            self.serf = SerfClient()
+        else:
+            self.serf = Serf()
+
+        self.io = self.serf.io
         
         self.stats = stats
         self.handlers = [handler] if handler else []
@@ -87,7 +98,7 @@ class CloudChaser(Serf):
         self.mac_handlers = [mac_handler] if mac_handler else []
         self.uart_handlers = [uart_handler] if uart_handler else []
 
-        self.add(
+        self.serf.add(
             name='echo',
             code=CODE_ID_ECHO,
             encode=lambda mesg: struct.pack(f"<{len(mesg) + 1}s", mesg + b'\x00'),
@@ -95,7 +106,7 @@ class CloudChaser(Serf):
             response=CODE_ID_ECHO
         )
 
-        self.add(
+        self.serf.add(
             name='reboot',
             code=CODE_ID_REBOOT,
             encode=lambda addr=CloudChaser.NET_ADDR_INVL: struct.pack("<HI", addr & CloudChaser.NET_ADDR_MASK, _RESET_MAGIC)
@@ -139,7 +150,7 @@ class CloudChaser(Serf):
                 chan=tuple(chan)
             )
 
-        self.add(
+        self.serf.add(
             name='status',
             code=CODE_ID_STATUS,
             decode=decode_status,
@@ -153,7 +164,7 @@ class CloudChaser(Serf):
             assert isinstance(param, (bytes, bytearray))
             return struct.pack(f"<I4s{len(data)}s", cid & 0xFFFFFFFF, param, data)
 
-        self.add(
+        self.serf.add(
             name='config',
             code=CODE_ID_CONFIG,
             encode=encode_config,
@@ -199,13 +210,13 @@ class CloudChaser(Serf):
                     wait & 0xFFFFFFFF, data
                 )
 
-        self.add(
+        self.serf.add(
             name='send_nowait',
             code=CODE_ID_SEND,
             encode=lambda addr, port, typ, data, mesg=False: encode_send(addr, port, typ, data, mesg, rslt=False),
         )
 
-        self.add(
+        self.serf.add(
             name='send_wait',
             code=CODE_ID_SEND,
             encode=lambda addr, port, typ, data, mesg=False: encode_send(addr, port, typ, data, mesg, rslt=True),
@@ -220,13 +231,13 @@ class CloudChaser(Serf):
         self.io.mesg = lambda addr, port, typ, data, wait=True: \
             self.io.send(addr, port, typ, data, mesg=True, wait=wait)
 
-        self.add(
+        self.serf.add(
             name='resp',
             code=CODE_ID_RESP,
             encode=lambda addr, port, typ, data, mesg=True: encode_send(addr, port, typ, data, mesg)
         )
 
-        self.add(
+        self.serf.add(
             name='recv',
             response=CODE_ID_RECV,
             decode=lambda data: struct.unpack(f"<HHHB{len(data) - 7}s", data),
@@ -240,7 +251,7 @@ class CloudChaser(Serf):
             # TODO: Validate/match port & type?
             return None if not addr else (addr, data)
 
-        self.add(
+        self.serf.add(
             name='trxn',
             code=CODE_ID_TRXN,
             encode=lambda addr, port, typ, wait, data: encode_send(addr, port, typ, data, mesg=None, wait=wait),
@@ -249,14 +260,14 @@ class CloudChaser(Serf):
             multi=True
         )
 
-        self.add(
+        self.serf.add(
             name='mac_recv',
             response=CODE_ID_MAC_RECV,
             decode=lambda data: struct.unpack(f"<HHHHbB{len(data) - 10}s", data),
             handle=self.handle_mac_recv
         )
 
-        self.add(
+        self.serf.add(
             name='mac_send',
             code=CODE_ID_MAC_SEND,
             encode=lambda typ, dest, data, addr=0: struct.pack(
@@ -265,7 +276,7 @@ class CloudChaser(Serf):
             )
         )
 
-        self.add(
+        self.serf.add(
             name='mac_send_wait',
             code=CODE_ID_MAC_SEND,
             encode=lambda typ, dest, data, flag=0, addr=0: struct.pack(
@@ -288,7 +299,7 @@ class CloudChaser(Serf):
 
             return adict(node=addr, time=now, peers=peers)
 
-        self.add(
+        self.serf.add(
             name='peer',
             code=CODE_ID_PEER,
             decode=decode_peer,
@@ -308,7 +319,7 @@ class CloudChaser(Serf):
                 )
             )
 
-        self.add(
+        self.serf.add(
             name='ping',
             code=CODE_ID_PING,
             encode=lambda addr, timeout=100, size=0, size_resp=0, strm=False:
@@ -327,14 +338,14 @@ class CloudChaser(Serf):
 
             return evnt
 
-        self.add(
+        self.serf.add(
             name='evnt',
             response=CODE_ID_EVNT,
             decode=decode_evnt,
             handle=self.handle_evnt
         )
 
-        self.add(
+        self.serf.add(
             name='uart',
             code=CODE_ID_UART,
             encode=lambda data: data,
@@ -343,13 +354,13 @@ class CloudChaser(Serf):
             handle=self.handle_uart
         )
 
-        self.add(
+        self.serf.add(
             name='rainbow',
             code=CODE_ID_RAINBOW,
             encode=lambda addr=CloudChaser.NET_ADDR_INVL: struct.pack("<H", addr & CloudChaser.NET_ADDR_MASK)
         )
 
-        self.add(
+        self.serf.add(
             name='updt',
             code=CODE_ID_FLASH,
             encode=lambda size_total, size_header, size_user, size_code, size_text, size_data, bin_data:
@@ -361,7 +372,7 @@ class CloudChaser(Serf):
             response=CODE_ID_FLASH_STAT
         )
 
-        self.add(
+        self.serf.add(
             name='fota',
             code=CODE_ID_FOTA,
             encode=lambda addr: struct.pack("<H", addr & CloudChaser.NET_ADDR_MASK),
@@ -369,7 +380,7 @@ class CloudChaser(Serf):
             response=CODE_ID_FOTA_STAT
         )
 
-        self.add(
+        self.serf.add(
             name='led',
             code=CODE_ID_LED,
             encode=lambda addr, mask, rgb: struct.pack(
@@ -379,7 +390,28 @@ class CloudChaser(Serf):
         )
 
     def __str__(self):
-        return "cc@{}".format(self.port)
+        return "cc@{}".format(self.serf.port)
+
+    def open_tty(self, tty):
+        return self.serf.open(tty)
+
+    def open(self, device, path=None):
+
+        if self.server:
+            return self.serf.open(tty=device, path=path)
+        elif self.server is False:
+            return self.serf.open(path=path)
+
+        return self.serf.open(device)
+
+    def close(self):
+        return self.serf.close()
+
+    def join(self):
+        return self.serf.join()
+
+    def reopen(self):
+        return self.serf.reopen()
 
     def reset(self, reopen=True):
         self.io.reboot()

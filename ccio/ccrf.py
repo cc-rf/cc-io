@@ -72,7 +72,13 @@ class CCRF:
             self.stats = Stats(stats)
             self.stats.start()
 
+        server = None
+
+        if device.startswith("unix://"):
+            server = "@" in device
+
         self.cc = CloudChaser(
+            server=server,
             stats=self.stats,
             handler=self.__handle_recv,
             mac_handler=self.__handle_recv_mac,
@@ -97,6 +103,19 @@ class CCRF:
         """Open the serial connection.
         """
         device = self.device
+        path = None
+
+        if device.startswith("unix://"):
+
+            if "@" in device:
+                path, device = device.split("@", 1)
+            else:
+                path = device
+                device = None
+
+            if device is None:
+                self.device_path = device
+                return self.cc.open(device=device, path=path)
 
         if ":" in device or len(device) == 16 or device == "any":
             cell = None
@@ -133,7 +152,10 @@ class CCRF:
                     continue
 
                 try:
-                    self.cc.open(device)
+                    if path is None:
+                        self.cc.open_tty(device)
+                    else:
+                        self.cc.open(device=device, path=path)
 
                     if addr is None or (addr == self.addr() and (cell is None or cell == self.cell())):
                         self.device_path = device
@@ -416,6 +438,14 @@ class CCRF:
     def argparse_device_arg(parser):
         def parse_device(d):
             if d.startswith('/'):
+                return d
+
+            if d.startswith("unix://"):
+                if d.count("@") > 1:
+                    raise ValueError("device server spec must be unix://sock@device")
+                elif d.count("@") == 1:
+                    parse_device(d.split("@", 1)[1])
+
                 return d
 
             if ":" in d:
@@ -915,6 +945,7 @@ class CCRF:
                 command(ccrf, args)
 
         except Exception as exc:
+            # raise
             exit(exc)
 
         except KeyboardInterrupt:
