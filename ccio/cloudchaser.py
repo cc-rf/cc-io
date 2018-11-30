@@ -6,7 +6,7 @@ import time
 from datetime import datetime
 
 from .serf import Serf, SerfClient, SerfServer
-from .adict import adict
+from .adict import adict, oadict
 
 
 CODE_ID_ECHO = 0
@@ -50,10 +50,19 @@ _RESET_MAGIC = 0xD1E00D1E
 class CloudChaser:
 
     NET_EVNT_PEER = 0
-    NET_EVNT_PEER_SET = 0
-    NET_EVNT_PEER_EXP = 1
-    NET_EVNT_PEER_OUT = 2
-    NET_EVNT_PEER_UPD = 3
+    NET_EVNT_PEER_NONE = 0
+    NET_EVNT_PEER_SET = 1
+    NET_EVNT_PEER_EXP = 2
+    NET_EVNT_PEER_OUT = 3
+    NET_EVNT_PEER_UPD = 4
+
+    NET_EVNT_PEER_MAP = oadict(
+        NONE=NET_EVNT_PEER_NONE,
+        SET=NET_EVNT_PEER_SET,
+        EXP=NET_EVNT_PEER_EXP,
+        OUT=NET_EVNT_PEER_OUT,
+        UPD=NET_EVNT_PEER_UPD
+    )
 
     NET_BASE_SIZE = 113
 

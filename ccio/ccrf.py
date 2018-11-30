@@ -39,6 +39,7 @@ class CCRF:
     EVNT_PEER_EXP = CloudChaser.NET_EVNT_PEER_EXP
     EVNT_PEER_OUT = CloudChaser.NET_EVNT_PEER_OUT
     EVNT_PEER_UPD = CloudChaser.NET_EVNT_PEER_UPD
+    EVNT_PEER_MAP = CloudChaser.NET_EVNT_PEER_MAP
 
     CHANNEL_COUNT = CloudChaser.PHY_CHAN_COUNT
 
@@ -1197,7 +1198,7 @@ class CCRF:
     def _command_monitor(ccrf, args):
         for evnt in ccrf.evnt():
             if evnt.id == CCRF.EVNT_PEER:
-                action = {0: 'SET', 1: 'EXP', 2: 'OUT', 3: 'UPD'}.get(evnt.action, evnt.action)
+                action = tuple(CCRF.EVNT_PEER_MAP.keys())[evnt.action]
 
                 print(f"{evnt.addr:04X}: {action}")
 
