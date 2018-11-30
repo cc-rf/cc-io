@@ -30,7 +30,7 @@ def run(ccrf, tun, args):
 
 def main():
     parser = argparse.ArgumentParser(prog="bench")
-    CCRF.argparse_device_arg(parser)
+    CCRF.argparse_device_arg(parser, required=False)
     parser.add_argument('net', help='tunnel network address')
     parser.add_argument('addr', type=lambda p: int(p, 16), help='tunnel endpoint address')
     argcomplete.autocomplete(parser)
