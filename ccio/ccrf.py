@@ -473,7 +473,7 @@ class CCRF:
         return parser.add_argument(
             '-d', '--device', metavar='DEV', help='serial device or acm tty number',
             type=parse_device,
-            **(util.arg_env_or_none('CCRF_DEV') if not required else util.arg_env_or_req('CCRF_DEV'))
+            **(util.arg_env_or_none('CCRF_DEV', 'any') if not required else util.arg_env_or_req('CCRF_DEV'))
         )
 
     @staticmethod
