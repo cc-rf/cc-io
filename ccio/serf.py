@@ -363,17 +363,17 @@ class SerfClient(Serf):
                 else:
                     code, rslt = obj
 
-                    assert type(code) is int and code
+                    assert type(code) is int
 
             except (pickle.UnpicklingError, TypeError, ValueError, AssertionError) as exc:
-                print("serf-client:", exc, file=sys.stderr)
+                print("serf-client:", type(exc), exc, file=sys.stderr)
                 break
 
             except (IOError, EOFError):
                 print("connection closed.", file=sys.stderr)
                 break
 
-            if code:
+            if code is not None:
                 for cmd in self.cmds.values():
                     if cmd.response == code:
                         break
@@ -430,7 +430,7 @@ class SerfServer(Serf):
             self.__handlers_installed = True
 
             for cmd in self.cmds.values():
-                if cmd.response and cmd.handle != self.handle_noop:
+                if cmd.response is not None and cmd.handle != self.handle_noop:
                     cmd.handle_orig = cmd.handle
 
                     def handler(c):
