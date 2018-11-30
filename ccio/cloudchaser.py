@@ -111,8 +111,13 @@ class CloudChaser:
             name='echo',
             code=CODE_ID_ECHO,
             encode=lambda mesg: struct.pack(f"<{len(mesg) + 1}s", mesg + b'\x00'),
+        )
+
+        self.serf.add(
+            name='__echo',
+            response=CODE_ID_ECHO,
             decode=lambda data: str(data, 'ascii'),
-            response=CODE_ID_ECHO
+            handle=self.handle_echo
         )
 
         self.serf.add(
@@ -470,6 +475,10 @@ class CloudChaser:
 
         for handler in self.handlers:
             handler(addr, dest, port, typ, seqn, rssi, lqi, data)
+
+    def handle_echo(self, mesg):
+        print(mesg)
+        return mesg
 
     def handle_evnt(self, evnt):
         for evnt_handler in self.evnt_handlers:

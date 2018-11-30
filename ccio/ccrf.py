@@ -998,9 +998,9 @@ class CCRF:
                 ccrf.echo(sys.stdin.read())
 
         else:
-            print(ccrf.echo(args.data))
+            ccrf.echo(args.data)
 
-        time.sleep(0.100)
+        time.sleep(0.010)
 
     @staticmethod
     def _command_flush(ccrf, args):
