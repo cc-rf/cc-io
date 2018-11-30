@@ -6,7 +6,7 @@ import time
 from datetime import datetime
 
 from .serf import Serf, SerfClient, SerfServer
-from .util import adict
+from .adict import adict
 
 
 CODE_ID_ECHO = 0
@@ -271,7 +271,7 @@ class CloudChaser:
             name='mac_send',
             code=CODE_ID_MAC_SEND,
             encode=lambda typ, dest, data, addr=0: struct.pack(
-                f"<BBHHH{len(data)}s", typ & 0xFF, ~_CODE_MAC_SEND_WAIT & 0xFF,
+                f"<BBHHH{len(data)}s", typ & 0xFF, 0x00,
                 addr & 0xFFFF, dest & 0xFFFF, len(data), data
             )
         )
@@ -428,7 +428,7 @@ class CloudChaser:
     @staticmethod
     def format_status(stat):
         stat_date = CloudChaser.format_date(stat.date)
-        return "Cloud Chaser {:08x}.{} {:016X}@{:02X}:{:04X} up={}s rx={}/{}/{} tx={}/{}/{}".format(
+        return "Cloud Chaser {:08x}.{} {:016X}:{:02X}:{:04X} up={}s rx={}/{}/{} tx={}/{}/{}".format(
             stat.version, stat_date, stat.serial, stat.cell, stat.addr, stat.uptime // 1000,
             stat.net_stat.recv.count, stat.net_stat.recv.size, stat.net_stat.recv.error,
             stat.net_stat.send.count, stat.net_stat.send.size, stat.net_stat.send.error

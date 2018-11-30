@@ -28,7 +28,7 @@ def install(cleanup):
     for sig in signals:
         try:
             signal.signal(sig, catch_signal)
-        except Exception, e:
+        except:
             pass
 
     CLEANUP_HANDLERS_INSTALLED = True

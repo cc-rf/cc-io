@@ -14,7 +14,7 @@ import threading
 import subprocess
 
 from . import util
-from .util import adict
+from .adict import adict
 from .cloudchaser import CloudChaser
 from .stats import Stats
 from .asyncq import AsyncQ
@@ -435,7 +435,7 @@ class CCRF:
         self.__evnt_q.push(evnt, timeout=0)
 
     @staticmethod
-    def argparse_device_arg(parser):
+    def argparse_device_arg(parser, required=True):
         def parse_device(d):
             if d.startswith('/'):
                 return d
@@ -471,7 +471,7 @@ class CCRF:
         return parser.add_argument(
             '-d', '--device', metavar='DEV', help='serial device or acm tty number',
             type=parse_device,
-            **util.arg_env_or_none('CCRF_DEV')
+            **(util.arg_env_or_none('CCRF_DEV') if not required else util.arg_env_or_req('CCRF_DEV'))
         )
 
     @staticmethod

@@ -12,7 +12,7 @@ import fcntl
 from warnings import warn
 
 from . import cobs
-from .util import adict, oadict
+from .adict import adict, oadict
 from .asyncq import AsyncQ
 
 
