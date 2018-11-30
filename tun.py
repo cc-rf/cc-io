@@ -18,19 +18,17 @@ def run(ccrf, tun, args):
     ccrf.print_status()
 
     def recv():
-        ccrf_addr = ccrf.addr()
+        addr = args.addr if args.addr != 0 else None
+        ccrf_addr = ccrf.addr() if args.addr != 0 else 0
 
-        for mesg in ccrf.recv(addr=args.addr, dest=ccrf_addr, port=TUN_PORT, typ=TUN_TYPE):
+        for mesg in ccrf.recv(addr=addr, dest=ccrf_addr, port=TUN_PORT, typ=TUN_TYPE):
             tun.write(mesg.data)
 
     Thread(target=recv, daemon=True).start()
 
     while 1:
         data = tun.read()
-        rslt = ccrf.mesg(args.addr, port=TUN_PORT, typ=TUN_TYPE, data=data, wait=True)
-
-        if not rslt:
-            print(f"send fail: addr={args.addr:04X} rslt={rslt}", file=sys.stderr)
+        ccrf.mesg(args.addr, port=TUN_PORT, typ=TUN_TYPE, data=data, wait=False)
 
 
 def main():
