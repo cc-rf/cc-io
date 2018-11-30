@@ -28,7 +28,7 @@ def run(ccrf, args):
         # However, measurement shows that 12 yields a receive rate of 25 (net) packets per second, or one
         #   per channel. This is accounted for by the ~600us of processing/rtt required per packet.
 
-        data = b'a' * CCRF.MTU * 12
+        data = b'a' * CCRF.MTU  * 12
 
         if args.trxn:
             while 1:
@@ -37,8 +37,7 @@ def run(ccrf, args):
 
         else:
             while 1:
-                ccrf.send(args.addr, port=101, typ=2, data=data, mesg=True, wait=False)
-                time.sleep(0.5)
+                ccrf.send(args.addr, port=101, typ=2, data=data, mesg=False, wait=False)
 
 
 def main():

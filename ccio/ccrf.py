@@ -436,7 +436,7 @@ class CCRF:
         self.__evnt_q.push(evnt, timeout=0)
 
     @staticmethod
-    def argparse_device_arg(parser, required=True):
+    def argparse_device_arg(parser, required=False):
         def parse_device(d):
             if d.startswith('/'):
                 return d
@@ -480,7 +480,7 @@ class CCRF:
     def main():
         parser = argparse.ArgumentParser(prog="ccrf")
 
-        CCRF.argparse_device_arg(parser, required=False)
+        CCRF.argparse_device_arg(parser)
 
         parser.add_argument('-v', '--verbose', action='store_true', help='verbose output')
 

@@ -18,7 +18,9 @@ def run(ccrf, tun, args):
     ccrf.print_status()
 
     def recv():
-        for mesg in ccrf.recv(addr=args.addr, dest=ccrf.addr(), port=TUN_PORT, typ=TUN_TYPE):
+        ccrf_addr = ccrf.addr()
+
+        for mesg in ccrf.recv(addr=args.addr, dest=ccrf_addr, port=TUN_PORT, typ=TUN_TYPE):
             tun.write(mesg.data)
 
     Thread(target=recv, daemon=True).start()
@@ -30,7 +32,7 @@ def run(ccrf, tun, args):
 
 def main():
     parser = argparse.ArgumentParser(prog="bench")
-    CCRF.argparse_device_arg(parser, required=False)
+    CCRF.argparse_device_arg(parser)
     parser.add_argument('net', help='tunnel network address')
     parser.add_argument('addr', type=lambda p: int(p, 16), help='tunnel endpoint address')
     argcomplete.autocomplete(parser)
