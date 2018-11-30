@@ -249,7 +249,7 @@ class CloudChaser:
         self.serf.add(
             name='recv',
             response=CODE_ID_RECV,
-            decode=lambda data: struct.unpack(f"<HHHB{len(data) - 7}s", data),
+            decode=lambda data: struct.unpack(f"<HHHBBbB{len(data) - 10}s", data),
             handle=self.handle_recv
         )
 
@@ -272,7 +272,7 @@ class CloudChaser:
         self.serf.add(
             name='mac_recv',
             response=CODE_ID_MAC_RECV,
-            decode=lambda data: struct.unpack(f"<HHHHbB{len(data) - 10}s", data),
+            decode=lambda data: struct.unpack(f"<HHHHBbB{len(data) - 11}s", data),
             handle=self.handle_mac_recv
         )
 
@@ -456,20 +456,20 @@ class CloudChaser:
             self.stats.unlock()
 
     def handle_mac_recv(self, mesg):
-        addr, peer, dest, size, rssi, lqi, data = mesg
+        addr, peer, dest, size, seqn, rssi, lqi, data = mesg
 
         self.__update_stats_recv(len(data), rssi, lqi)
 
         for mac_handler in self.mac_handlers:
-            mac_handler(addr, peer, dest, rssi, lqi, data)
+            mac_handler(addr, peer, dest, seqn, rssi, lqi, data)
 
     def handle_recv(self, mesg):
-        addr, dest, port, typ, data = mesg
+        addr, dest, port, typ, seqn, rssi, lqi, data = mesg
 
-        self.__update_stats_recv(len(data))
+        self.__update_stats_recv(len(data), rssi, lqi)
 
         for handler in self.handlers:
-            handler(addr, dest, port, typ, data)
+            handler(addr, dest, port, typ, seqn, rssi, lqi, data)
 
     def handle_evnt(self, evnt):
         for evnt_handler in self.evnt_handlers:

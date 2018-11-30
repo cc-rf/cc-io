@@ -422,14 +422,18 @@ class CCRF:
         """
         return self.cc.io.ping(addr, timeout, size, size_resp, strm=stream)
 
-    def __handle_recv(self, addr, dest, port, typ, data):
+    def __handle_recv(self, addr, dest, port, typ, seqn, rssi, lqi, data):
         self.__recv_q.push(adict(
-            addr=addr, dest=dest, port=port, type=typ, data=data
+            addr=addr, dest=dest,
+            seqn=seqn, rssi=rssi, lqi=lqi,
+            port=port, type=typ, data=data
         ), timeout=0)
 
-    def __handle_recv_mac(self, addr, peer, dest, rssi, lqi, data):
+    def __handle_recv_mac(self, addr, peer, dest, seqn, rssi, lqi, data):
         self.__recv_mac_q.push(adict(
-            addr=addr, peer=peer, dest=dest, rssi=rssi, lqi=lqi, data=data
+            addr=addr, peer=peer, dest=dest,
+            seqn=seqn, rssi=rssi, lqi=lqi,
+            data=data
         ), timeout=0)
 
     def __handle_evnt(self, evnt):
@@ -857,7 +861,13 @@ class CCRF:
         parser_update.add_argument(
             '-p', '--path',
             default=default_update_path,
-            help=f"path to firmware package files: default={default_update_path}"
+            help=f"path to firmware package files: default={default_update_path} (release)"
+        )
+
+        parser_update.add_argument(
+            '-D', '--debug',
+            action='store_true',
+            help=f"use default debug package path isntead of release"
         )
 
         parser_ping = subparsers.add_parser('ping', help='ping remote device')
@@ -1047,6 +1057,9 @@ class CCRF:
 
     @staticmethod
     def _command_update(ccrf, args):
+        if args.debug:
+            args.path = os.path.join(args.path, "../")
+
         sizes = open(os.path.join(args.path, "fw.siz")).read()
 
         size_interrupts = int(re.findall(r"^\.interrupts\s+(\d+).+$", sizes, flags=re.MULTILINE)[0])
