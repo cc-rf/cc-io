@@ -111,12 +111,8 @@ class CCRF:
             if "@" in device:
                 path, device = device.split("@", 1)
             else:
-                path = device
-                device = None
-
-            if device is None:
                 self.device_path = device
-                return self.cc.open(device=device, path=path)
+                return self.cc.open(device=None, path=device)
 
         if ":" in device or len(device) == 16 or device == "any":
             cell = None
@@ -174,7 +170,7 @@ class CCRF:
 
         self.device_path = device
 
-        self.cc.open(device)
+        self.cc.open(device=device, path=path)
 
     def close(self):
         """Close the serial connection to the device.
@@ -449,7 +445,8 @@ class CCRF:
                 if d.count("@") > 1:
                     raise ValueError("device server spec must be unix://sock@device")
                 elif d.count("@") == 1:
-                    parse_device(d.split("@", 1)[1])
+                    d, rest = d.split("@", 1)
+                    d = f"{d}@{parse_device(rest)}"
 
                 return d
 
@@ -482,7 +479,11 @@ class CCRF:
     @staticmethod
     def main():
         parser = argparse.ArgumentParser(prog="ccrf")
+
         CCRF.argparse_device_arg(parser, required=False)
+
+        parser.add_argument('-v', '--verbose', action='store_true', help='verbose output')
+
         subparsers = parser.add_subparsers(dest='command', title='commands', help='action to invoke', metavar='CMD')
 
         parser_status = subparsers.add_parser('status', aliases=['stat'], help='display status')
@@ -956,7 +957,9 @@ class CCRF:
                 command(ccrf, args)
 
         except Exception as exc:
-            # raise
+            if args.verbose:
+                raise
+
             exit(exc)
 
         except KeyboardInterrupt:
