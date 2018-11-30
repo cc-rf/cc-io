@@ -19,7 +19,6 @@ def run(ccrf, tun, args):
 
     def recv():
         ccrf_addr = ccrf.addr()
-        print(ccrf_addr)
 
         for mesg in ccrf.recv(addr=args.addr, dest=ccrf_addr, port=TUN_PORT, typ=TUN_TYPE):
             tun.write(mesg.data)
