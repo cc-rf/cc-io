@@ -477,7 +477,7 @@ class CCRF:
     @staticmethod
     def main():
         parser = argparse.ArgumentParser(prog="ccrf")
-        CCRF.argparse_device_arg(parser)
+        CCRF.argparse_device_arg(parser, required=False)
         subparsers = parser.add_subparsers(dest='command', title='commands', help='action to invoke', metavar='CMD')
 
         parser_status = subparsers.add_parser('status', aliases=['stat'], help='display status')

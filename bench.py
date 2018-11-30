@@ -37,7 +37,8 @@ def run(ccrf, args):
 
         else:
             while 1:
-                ccrf.send(args.addr, port=101, typ=2, data=data, mesg=False, wait=False)
+                ccrf.send(args.addr, port=101, typ=2, data=data, mesg=True, wait=False)
+                time.sleep(0.5)
 
 
 def main():
