@@ -19,6 +19,7 @@ def run(ccrf, tun, args):
 
     def recv():
         ccrf_addr = ccrf.addr()
+        print(ccrf_addr)
 
         for mesg in ccrf.recv(addr=args.addr, dest=ccrf_addr, port=TUN_PORT, typ=TUN_TYPE):
             tun.write(mesg.data)
@@ -27,7 +28,10 @@ def run(ccrf, tun, args):
 
     while 1:
         data = tun.read()
-        ccrf.mesg(args.addr, port=TUN_PORT, typ=TUN_TYPE, data=data, wait=True)
+        rslt = ccrf.mesg(args.addr, port=TUN_PORT, typ=TUN_TYPE, data=data, wait=True)
+
+        if not rslt:
+            print(f"send fail: addr={args.addr:04X} rslt={rslt}", file=sys.stderr)
 
 
 def main():
