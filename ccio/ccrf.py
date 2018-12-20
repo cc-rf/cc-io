@@ -868,7 +868,7 @@ class CCRF:
         parser_update.add_argument(
             '-D', '--debug',
             action='store_true',
-            help=f"use default debug package path isntead of release"
+            help=f"use default debug package path instead of release"
         )
 
         parser_ping = subparsers.add_parser('ping', help='ping remote device')
